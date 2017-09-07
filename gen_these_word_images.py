@@ -23,13 +23,16 @@ from keras.utils import np_utils
 # Import params
 from params import *
 
-def gen_these_word_images(allDirs, allWordNumbers, batchSize, reverseImageSequence=True, wordsVocabSize=wordsVocabSize,
-                     align=False, useMeanMouthImage=False, meanMouthImage=None,
-                     shuffle=True, keepPadResults=False, verbose=False):
+def gen_these_word_images(allDirs, allWordNumbers, allWords=None, batchSize=32,
+                        reverseImageSequence=True, wordsVocabSize=wordsVocabSize,
+                        align=False, useMeanMouthImage=False, meanMouthImage=None,
+                        shuffle=True, keepPadResults=False, verbose=False):
     np.random.seed(29)
     # Make copy so that allDirs' source is not affected by shuffle
     dirs = np.array(allDirs)
     wordNumbers = np.array(allWordNumbers)
+    if allWords is not None:
+        words = np.array(allWords)
     # Looping generator
     while 1:
         # Shuffling input list
@@ -38,6 +41,8 @@ def gen_these_word_images(allDirs, allWordNumbers, batchSize, reverseImageSequen
             np.random.shuffle(fullIdx)
             dirs = dirs[fullIdx]
             wordNumbers = wordNumbers[fullIdx]
+            if allWords is not None:
+                words = words[fullIdx]
         # For each slice of batchSize number of files:
         for batch in range(0, len(dirs), batchSize):
             # print("batch " + str(batch))
@@ -50,6 +55,8 @@ def gen_these_word_images(allDirs, allWordNumbers, batchSize, reverseImageSequen
             # For each video in the batch
             batchDirs = dirs[batch:batch + batchSize]
             batchWordNumbers = wordNumbers[batch:batch + batchSize]
+            if allWords is not None:
+                batchWords = words[batch:batch + batchSize]
             # print(batchDirs[:10])
             # If at the end, there are lesser number of video files than
             # batchSize
@@ -86,11 +93,17 @@ def gen_these_word_images(allDirs, allWordNumbers, batchSize, reverseImageSequen
                 # Extract the word and save this word in y using one-hot
                 # encoding
                 if keepPadResults:
-                    y[i][0] = np_utils.to_categorical(
-                        wordIdx[wordTimeData[wordNum].split(' ')[-1][:-1]], wordsVocabSize)
+                    if allWords is not None:
+                        y[i][0] = np_utils.to_categorical(batchWords[i], wordsVocabSize)
+                    else:
+                        y[i][0] = np_utils.to_categorical(
+                            wordIdx[wordTimeData[wordNum].split(' ')[-1][:-1]], wordsVocabSize)
                 else:
-                    y[i] = np_utils.to_categorical(
-                        wordIdx[wordTimeData[wordNum].split(' ')[-1][:-1]], wordsVocabSize)
+                    if allWords is not None:
+                        y[i] = np_utils.to_categorical(batchWords[i], wordsVocabSize)
+                    else:
+                        y[i] = np_utils.to_categorical(
+                            wordIdx[wordTimeData[wordNum].split(' ')[-1][:-1]], wordsVocabSize)
                 # Initialize the array of images for this word
                 wordImages = np.zeros((framesPerWord, nOfMouthPixels))
                 # Find the start and end frame for this word

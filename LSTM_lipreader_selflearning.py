@@ -35,8 +35,6 @@ LSTMLipReaderModel, LSTMEncoder, fileNamePre = LSTM_lipreader(useMask=useMask,
     hiddenDim=hiddenDim, depth=depth, LSTMactiv=LSTMactiv, encodedDim=encodedDim,
     encodedActiv=encodedActiv, optimizer=optimizer, lr=lr)
 
-batchSize = 512
-
 #############################################################
 # LOAD IMAGES
 #############################################################
@@ -44,16 +42,6 @@ batchSize = 512
 trainDirs, trainWordNumbers, valDirs, valWordNumbers, siDirs, siWordNumbers = load_image_dirs_and_word_numbers(
                                                         trainValSpeakersList=[1, 2, 3, 4, 5, 6, 7, 10],
                                                         siList = [13, 14])
-fileNamePre += "-GRIDcorpus-s0107-10-si-s1314"
-
-genTrainImages = gen_these_word_images(trainDirs, trainWordNumbers, batchSize=batchSize, shuffle=False)
-trainSteps = len(trainDirs) // batchSize
-
-genValImages = gen_these_word_images(valDirs, valWordNumbers, batchSize=batchSize, shuffle=False)
-valSteps = len(valDirs) // batchSize
-
-genSiImages = gen_these_word_images(siDirs, siWordNumbers, batchSize=batchSize, shuffle=False)
-siSteps = len(siDirs) // batchSize
 
 
 #############################################################
@@ -143,9 +131,92 @@ class CheckSIAndMakePlots(Callback):
         plt.savefig(os.path.join(saveDir, fileNamePre + "-Plots.png"))
         plt.close()
 
+
+#############################################################
+# ADD UNLABELLED DATA TO LABELLED DATA BASED ON PRED MAX VAL
+#############################################################
+
+
+def add_unlabelled_data_to_labelled_data(trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled,
+                        trainDirsUnlabelled, trainWordNumbersUnlabelled,
+                        LSTMLipReaderModel, batchSize, fileNamePre,
+                        unlabelledPredMaxValueThresh = 0.99):
+    print("Adding unlabelled data to labelled data...")
+    genTrainImagesUnlabelled = gen_these_word_images(trainDirsUnlabelled, trainWordNumbersUnlabelled, batchSize=batchSize, shuffle=False)
+    trainUnlabelledSteps = len(trainDirsUnlabelled) // batchSize
+    # Find confidence values of predictions
+    unlabelledActualWords = []
+    unlabelledPreds = []
+    unlabelledPredWords = []
+    for step in tqdm.tqdm(range(trainUnlabelledSteps)):
+        vids, words = next(genTrainImagesUnlabelled)
+        actualWords = np.argmax(words, axis=1)
+        preds = LSTMLipReaderModel.predict(vids)
+        predWords = np.argmax(preds, axis=1)
+        for i in range(len(preds)):
+            unlabelledActualWords.append(actualWords[i])
+            unlabelledPreds.append(preds[i])
+            unlabelledPredWords.append(predWords[i])
+    # Max confidence value
+    unlabelledPredMaxValues = np.max(np.array(unlabelledPreds), axis=1)
+    # Sort all according to unlabelledPredMaxValues
+    sortedUnlabelledPredMaxValues, sortedUnlabelledPredWords, sortedUnlabelledActualWords, sortedTrainDirsUnlabelled, sortedTrainWordNumbersUnlabelled = (
+        np.array(t) for t in zip(*sorted(zip(unlabelledPredMaxValues, unlabelledPredWords, unlabelledActualWords, trainDirsUnlabelled, trainWordNumbersUnlabelled), reverse=True)))
+    # Plot Accuracy
+    unlabelledAccuracyOnMaxValues = np.cumsum(np.equal(sortedUnlabelledPredWords, sortedUnlabelledActualWords)) / (1 + np.arange(len(sortedUnlabelledActualWords)))
+    plt.plot(unlabelledAccuracyOnMaxValues[:int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))], label='accuracy')
+    plt.plot(sortedUnlabelledPredMaxValues[:int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))], label='max value')
+    # plt.scatter(np.arange(int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))), sortedTrainWordNumbersUnlabelled[:int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))]/wordsPerVideo, label='wordNumber')
+    plt.legend(loc='best')
+    plt.xlabel("Number of instances considered, sorted by predicted max value")
+    plt.ylabel("Accuracy")
+    plt.title("Unlabelled Accuracy with Max Values trained with 10%-1", fontsize=12)
+    plt.yticks(np.arange(0.95, 1.005, 0.005))
+    plt.gca().yaxis.grid(True)
+    # plt.show()
+    plt.savefig(os.path.join(saveDir, fileNamePre + "-unlabelled-accuracy-max-values.png"))
+    plt.close()
+    # Choose those in the unlabelled set that exceed max value thresh
+    maxValueFilter = sortedUnlabelledPredMaxValues > unlabelledPredMaxValueThresh
+    newTrainDirsLabelled = sortedTrainDirsUnlabelled[maxValueFilter]
+    newTrainWordNumbersLabelled = sortedTrainWordNumbersUnlabelled[maxValueFilter]
+    newTrainWords = sortedUnlabelledPredWords[maxValueFilter]
+    # Add them to the labelled directories
+    for directory, wordNum, predWord in zip(newTrainDirsLabelled, newTrainWordNumbersLabelled, newTrainWords):
+        trainDirsLabelled = np.append(trainDirsLabelled, directory)
+        trainWordNumbersLabelled = np.append(trainWordNumbersLabelled, wordNum)
+        trainWordsLabelled = np.append(trainWordsLabelled, predWord)
+    # Remove them from unlabelled directories
+    trainDirsUnlabelled = sortedTrainDirsUnlabelled[len(newTrainDirsLabelled):]
+    trainWordNumbersUnlabelled = sortedTrainWordNumbersUnlabelled[len(newTrainWordNumbersLabelled):]
+    return trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled, trainDirsUnlabelled, trainWordNumbersUnlabelled
+
+
+#################################################################
+# FIT ON LABELED DATA
+#################################################################
+
+
+def fit_on_labelled_data(iterNumber, LSTMLipReaderModel, trainDirsLabelled,
+        trainWordNumbersLabelled, trainWordsLabelled, batchSize, nEpochs, fileNamePre):
+    # Make generator: Labelled generator has labels as input
+    genTrainImagesLabelled = gen_these_word_images(trainDirsLabelled, trainWordNumbersLabelled,
+                                                    allWords=trainWordsLabelled, batchSize=batchSize, shuffle=True)
+    trainLabelledSteps = len(trainDirsLabelled) // batchSize
+    # Callbacks
+    checkSIAndMakePlots = CheckSIAndMakePlots()
+    earlyStop = EarlyStopping(monitor='val_loss', min_delta=0.0001, patience=5, verbose=True)
+    # FIT (gen)
+    LSTMLipReaderHistory = LSTMLipReaderModel.fit_generator(genTrainImagesLabelled, steps_per_epoch=trainLabelledSteps, epochs=nEpochs, verbose=True,
+                                                            callbacks=[checkSIAndMakePlots, earlyStop], validation_data=genValImages, validation_steps=valSteps)
+    return LSTMLipReaderModel
+
+
 #################################################################
 # 10%
 #################################################################
+
+labelledPercent = 10
 
 # Make model
 useMask = True
@@ -160,74 +231,151 @@ LSTMLipReaderModel, LSTMEncoder, fileNamePre = LSTM_lipreader(useMask=useMask,
     hiddenDim=hiddenDim, depth=depth, LSTMactiv=LSTMactiv, encodedDim=encodedDim,
     encodedActiv=encodedActiv, optimizer=optimizer, lr=lr)
 
+fileNamePre += "-GRIDcorpus-s0107-10-si-s1314"
+
 # Starting training with only 10% of training data,
 # and assuming the rest 90% to be unlabelled
 fileNamePre += "-10PercentSelfLearning"
 
-subsetPercent = 10
+# Split into labelled and unlabelled training data
+os.environ['PYTHONHASHSEED'] = '0'  # Necessary for python3
+np.random.seed(29)
+rn.seed(29)
+tf.set_random_seed(29)
+fullIdx = np.arange(len(trainDirs))
+np.random.shuffle(fullIdx)
+trainDirs = np.array(trainDirs)[fullIdx]
+trainWordNumbers = np.array(trainWordNumbers)[fullIdx]
+trainDirsLabelled = trainDirs[:int(labelledPercent/100*len(trainDirs))]
+trainWordNumbersLabelled = trainWordNumbers[:int(labelledPercent/100*len(trainDirs))]
+trainDirsUnlabelled = trainDirs[int(labelledPercent/100*len(trainDirs)):]
+trainWordNumbersUnlabelled = trainWordNumbers[int(labelledPercent/100*len(trainDirs)):]
 
-np.random.shuffle(trainDirs)
-trainDirsSubset = trainDirs[:int(subsetPercent/100*len(trainDirs))]
-trainWordNumbersSubset = trainWordNumbers[:int(subsetPercent/100*len(trainDirs))]
-trainDirsUnlabelled = trainDirs[int(subsetPercent/100*len(trainDirs)):]
-trainWordNumbersUnlabelled = trainWordNumbers[int(subsetPercent/100*len(trainDirs)):]
-
+# Decide batchSize, nEpochs
 batchSize = 512
 nEpochs = 100
-initEpoch = 0
 
-genTrainImagesSub = gen_these_word_images(trainDirsSubset, trainWordNumbersSubset, batchSize=batchSize, shuffle=True)
-trainSubSteps = len(trainDirsSubset) // batchSize
-genTrainImagesUnlabelled = gen_these_word_images(trainDirsUnlabelled, trainWordNumbersUnlabelled, batchSize=batchSize, shuffle=False)
-trainUnlabelledSteps = len(trainDirsUnlabelled) // batchSize
+# Make Generating Functions
+genTrainImages = gen_these_word_images(trainDirs, trainWordNumbers, batchSize=batchSize, shuffle=False)
+trainSteps = len(trainDirs) // batchSize
+genValImages = gen_these_word_images(valDirs, valWordNumbers, batchSize=batchSize, shuffle=False)
+valSteps = len(valDirs) // batchSize
+genSiImages = gen_these_word_images(siDirs, siWordNumbers, batchSize=batchSize, shuffle=False)
+siSteps = len(siDirs) // batchSize
 
-fileNamePre += '-1'
+# Find out correct labels for labelled data
+genTrainImagesLabelled = gen_these_word_images(trainDirsLabelled, trainWordNumbersLabelled, batchSize=1, shuffle=False)
+trainLabelledSteps = len(trainDirsLabelled)
+trainWordsLabelled = np.empty((0))
+for i in tqdm.tqdm(range(trainLabelledSteps)):
+    _, words = next(genTrainImagesLabelled)
+    for word in words:
+        trainWordsLabelled = np.append(trainWordsLabelled, np.argmax(word))
 
-checkSIAndMakePlots = CheckSIAndMakePlots()
-earlyStop = EarlyStopping(monitor='val_loss', min_delta=0.0001, patience=5, verbose=True)
+# To fit
+unlabelledPredMaxValueThresh = 0.99
+nIters = 100
+fileNamePre += '-0'
+for iterNumber in range(nIters):
+    # Change fileNamePre
+    fileNamePre = fileNamePre[:-2] + '-' + str(iterNumber)
+    # Fit
+    LSTMLipReaderModel = fit_on_labelled_data(iterNumber, LSTMLipReaderModel, trainDirsLabelled,
+        trainWordNumbersLabelled, trainWordsLabelled, batchSize, nEpochs, fileNamePre)
+    # Change data
+    trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled, trainDirsUnlabelled, trainWordNumbersUnlabelled \
+        = add_unlabelled_data_to_labelled_data(trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled,
+                trainDirsUnlabelled, trainWordNumbersUnlabelled, LSTMLipReaderModel,
+                batchSize, fileNamePre, unlabelledPredMaxValueThresh)
 
-# FIT (gen)
-LSTMLipReaderHistory = LSTMLipReaderModel.fit_generator(genTrainImagesSub, steps_per_epoch=trainSubSteps, epochs=nEpochs, verbose=True, callbacks=[checkSIAndMakePlots, earlyStop],
-                                                        validation_data=genValImages, validation_steps=valSteps, workers=1, initial_epoch=initEpoch)
-
-unlabelledActualWords = []
-unlabelledPreds = []
-unlabelledPredWords = []
-for step in range(trainUnlabelledSteps):
-    vids, words = next(genTrainImagesUnlabelled)
-    actualWords = np.argmax(words, axis=1)
-    preds = LSTMLipReaderModel.predict(vids)
-    predWords = np.argmax(preds, axis=1)
-    for i in range(len(preds)):
-        unlabelledActualWords.append(actualWords[i])
-        unlabelledPreds.append(preds[i])
-        unlabelledPredWords.append(predWords[i])
-
-unlabelledPreds = LSTMLipReaderModel.predict_generator(genTrainImagesUnlabelled, trainUnlabelledSteps)
-unlabelledPredMaxValues = np.max(unlabelledPreds, axis=1)
-unlabelledPredWords = np.argmax(unlabelledPreds, axis=1)
-unlabelledActualWords = []
-for i in range(trainUnlabelledSteps):
-    _, words = next(genTrainImagesUnlabelled)
-    for w in words:
-        unlabelledActualWords.append(np.argmax(w))
-
-# Sort all according to unlabelledPredMaxValues
-sortedUnlabelledPredMaxValues, sortedUnlabelledPredWords, sortedUnlabelledActualWords = (
-    list(t) for t in zip(*sorted(zip(unlabelledPredMaxValues, unlabelledPredWords, unlabelledActualWords), reverse=True)))
-
-# Plot precision
-unlabelledPrecision = np.cumsum(np.equal(sortedUnlabelledPredWords, sortedUnlabelledActualWords)) / (1 + np.arange(len(sortedUnlabelledPredWords)))
-plt.plot(unlabelledPrecision)
-plt.xlabel("Number of instances, sorted by predicted max value")
-plt.ylabel("Precision")
-plt.title("Unlabelled Precision with Max Values trained with 10%-1", fontsize=12)
-plt.show()
 
 
 #################################################################
 # 20%
 #################################################################
 
+
+
+
+
+
+
+
+#################################################################
+# IGNORE
+#################################################################
+
+# # Find confidence values of predictions
+# unlabelledActualWords = []
+# unlabelledPreds = []
+# unlabelledPredWords = []
+# for step in range(trainUnlabelledSteps):
+#     vids, words = next(genTrainImagesUnlabelled)
+#     actualWords = np.argmax(words, axis=1)
+#     preds = LSTMLipReaderModel.predict(vids)
+#     predWords = np.argmax(preds, axis=1)
+#     for i in range(len(preds)):
+#         unlabelledActualWords.append(actualWords[i])
+#         unlabelledPreds.append(preds[i])
+#         unlabelledPredWords.append(predWords[i])
+
+# unlabelledPredMaxValues = np.max(np.array(unlabelledPreds), axis=1)
+
+# # unlabelledPreds = LSTMLipReaderModel.predict_generator(genTrainImagesUnlabelled, trainUnlabelledSteps)
+# # unlabelledPredMaxValues = np.max(unlabelledPreds, axis=1)
+# # unlabelledPredWords = np.argmax(unlabelledPreds, axis=1)
+# # unlabelledActualWords = []
+# # for i in range(trainUnlabelledSteps):
+# #     _, words = next(genTrainImagesUnlabelled)
+# #     for w in words:
+# #         unlabelledActualWords.append(np.argmax(w))
+
+# # Sort all according to unlabelledPredMaxValues
+# sortedUnlabelledPredMaxValues, sortedUnlabelledPredWords, sortedUnlabelledActualWords, sortedTrainDirsUnlabelled, sortedTrainWordNumbersUnlabelled = (
+#     np.array(t) for t in zip(*sorted(zip(unlabelledPredMaxValues, unlabelledPredWords, unlabelledActualWords, trainDirsUnlabelled, trainWordNumbersUnlabelled), reverse=True)))
+
+# # Plot Accuracy
+# unlabelledAccuracyOnMaxValues = np.cumsum(np.equal(sortedUnlabelledPredWords, sortedUnlabelledActualWords)) / (1 + np.arange(len(sortedUnlabelledActualWords)))
+# plt.plot(unlabelledAccuracyOnMaxValues[:int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))], label='accuracy')
+# plt.plot(sortedUnlabelledPredMaxValues[:int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))], label='max value')
+# # plt.scatter(np.arange(int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))), sortedTrainWordNumbersUnlabelled[:int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))]/wordsPerVideo, label='wordNumber')
+# plt.legend(loc='best')
+# plt.xlabel("Number of instances considered, sorted by predicted max value")
+# plt.ylabel("Accuracy")
+# plt.title("Unlabelled Accuracy with Max Values trained with 10%-1", fontsize=12)
+# plt.yticks(np.arange(0.95, 1.005, 0.005))
+# plt.gca().yaxis.grid(True)
+# plt.show()
+
+# # For max % 2max
+# # unlabelledPred2MaxValues = np.reshape(np.sort(unlabelledPreds, axis=1)[:, -2:-1], (len(unlabelledPred2MaxValues),))
+# # unlabelledPredMaxBy2MaxValues = np.divide(unlabelledPredMaxValues, unlabelledPred2MaxValues)
+# # # Sort all according to unlabelledPredMaxValues
+# # sortedUnlabelledPredMaxBy2MaxValues, sortedUnlabelledPredWords, sortedUnlabelledActualWords = (
+# #     list(t) for t in zip(*sorted(zip(unlabelledPredMaxBy2MaxValues, unlabelledPredWords, unlabelledActualWords), reverse=True)))
+# # unlabelledAccuracyOnMaxBy2MaxValues = np.cumsum(np.equal(sortedUnlabelledPredWords, sortedUnlabelledActualWords)) / (1 + np.arange(len(sortedUnlabelledActualWords)))
+# # plt.plot(unlabelledAccuracyOnMaxBy2MaxValues[:int(labelledPercent/100*len(unlabelledAccuracyOnMaxBy2MaxValues))], label='accuracy')
+# # plt.plot(sortedUnlabelledPredMaxBy2MaxValues[:int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))] / sortedUnlabelledPredMaxBy2MaxValues[0] / 8 + .8 , label='max/2max')
+# # plt.legend(loc='best')
+# # plt.xlabel("Number of instances, sorted by predicted max value divided by 2nd max value")
+# # plt.ylabel("Accuracy")
+# # plt.title("Unlabelled Accuracy with Max divided by 2nd Max Values trained with 10%-1", fontsize=12)
+# # plt.show()
+
+# # Choose those in the unlabelled set that exceed max value thresh
+# unlabelledPredMaxValueThresh = 0.99
+# maxValueFilter = sortedUnlabelledPredMaxValues > unlabelledPredMaxValueThresh
+# newTrainDirsLabelled = sortedTrainDirsUnlabelled[maxValueFilter]
+# newTrainWordNumbersLabelled = sortedTrainWordNumbersUnlabelled[maxValueFilter]
+# newTrainWords = sortedUnlabelledPredWords[maxValueFilter]
+# # Add them to the training directories
+# for directory, wordNum, predWord in zip(newTrainDirsLabelled, newTrainWordNumbersLabelled, newTrainWords):
+#     trainDirsLabelled.append(directory)
+#     trainWordNumbersLabelled.append(wordNum)
+#     trainWordsLabelled.append(np_utils.to_categorical(predWord, wordsVocabSize))
+
+# # Remove them from unlabelled directories
+# trainDirsUnlabelled = sortedTrainDirsUnlabelled[len(newTrainDirsLabelled):]
+# trainWordNumbersUnlabelled = sortedTrainWordNumbersUnlabelled[len(newTrainWordNumbersLabelled):]
 
 
