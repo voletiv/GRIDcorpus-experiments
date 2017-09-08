@@ -54,12 +54,12 @@ class CheckSIAndMakePlots(Callback):
     # On train start
     def on_train_begin(self, logs={}):
         self.plotColor = plotColor
-        self.losses = []
+        self.trainLosses = []
         self.valLosses = []
         self.siLosses = []
-        self.acc = []
-        self.valAcc = []
-        self.siAcc = []
+        self.trainAccuracies = []
+        self.valAccuracies = []
+        self.siAccuracies = []
         # Define epochIndex
         def epochIndex(x):
             x = x.split('/')[-1].split('-')
@@ -72,40 +72,54 @@ class CheckSIAndMakePlots(Callback):
         for file in sorted(glob.glob(os.path.join(saveDir, "*" + fileNamePre + "*-epoch*")), key=epochNoInFile):
             print(file)
             epochIdx = epochIndex(file)
-            self.losses.append(
+            self.trainLosses.append(
                 float('.'.join(file.split('/')[-1].split('.')[:-1]).split('-')[epochIdx + 1][2:]))
-            self.acc.append(
+            self.trainAccuracies.append(
                 float('.'.join(file.split('/')[-1].split('.')[:-1]).split('-')[epochIdx + 2][2:]))
             self.valLosses.append(
                 float('.'.join(file.split('/')[-1].split('.')[:-1]).split('-')[epochIdx + 3][2:]))
-            self.valAcc.append(
+            self.valAccuracies.append(
                 float('.'.join(file.split('/')[-1].split('.')[:-1]).split('-')[epochIdx + 4][2:]))
             self.siLosses.append(
                 float('.'.join(file.split('/')[-1].split('.')[:-1]).split('-')[epochIdx + 5][3:]))
-            self.siAcc.append(
+            self.siAccuracies.append(
                 float('.'.join(file.split('/')[-1].split('.')[:-1]).split('-')[epochIdx + 6][3:]))
     # At every epoch
     def on_epoch_end(self, epoch, logs={}):
+        # Get current training and validation loss and acc
         tl = logs.get('loss')
         ta = logs.get('acc')
         vl = logs.get('val_loss')
         va = logs.get('val_acc')
         # Speaker-Independent
         print("Calculating speaker-independent loss and acc...")
+        sil, sia = calc_sil_and_sia()
+        # Save model
+        save_model_checkpoint(epoch, tl, ta, vl, va, sil, sia)
+        # Append losses and accs
+        self.trainLosses.append(tl)
+        self.valLosses.append(vl)
+        self.siLosses.append(sil)
+        self.trainAccuracies.append(ta)
+        self.valAccuracies.append(va)
+        self.siAccuracies.append(sia)
+        # Plot graphs
+        plot_and_save_losses_and_accuracies(epoch)
+    # Calculate speaker-independent loss and accuracy
+    def calc_sil_and_sia(self):
         [sil, sia] = LSTMLipReaderModel.evaluate_generator(genSiImages, siSteps)
+        return sil, sia
+    # Save model checkpoint
+    def save_model_checkpoint(self, epoch, tl, ta, vl, va, sil, sia):
         modelFilePath = os.path.join(saveDir,
             fileNamePre + "-epoch{0:03d}-tl{1:.4f}-ta{2:.4f}-vl{3:.4f}-va{4:.4f}-sil{5:.4f}-sia{6:.4f}.hdf5".format(epoch, tl, ta, vl, va, sil, sia))
         print("Saving model", modelFilePath)
         LSTMLipReaderModel.save_weights(modelFilePath)
+    # Plot and save losses and accuracies
+    def plot_and_save_losses_and_accuracies(self, epoch):
         print("Saving plots for epoch " + str(epoch))
-        self.losses.append(tl)
-        self.valLosses.append(vl)
-        self.siLosses.append(sil)
-        self.acc.append(ta)
-        self.valAcc.append(va)
-        self.siAcc.append(sia)
         plt.subplot(121)
-        plt.plot(self.losses, label='trainingLoss', color=self.plotColor, linestyle='--')
+        plt.plot(self.trainLosses, label='trainLoss', color=self.plotColor, linestyle='--')
         plt.plot(self.valLosses, label='valLoss', color=self.plotColor, linestyle='-')
         plt.plot(self.siLosses, label='siLoss', color=self.plotColor, linestyle='-.')
         leg = plt.legend(loc='best', fontsize=11, fancybox=True)
@@ -114,9 +128,9 @@ class CheckSIAndMakePlots(Callback):
         plt.ylabel('loss')
         plt.title("Loss")
         plt.subplot(122)
-        plt.plot(self.acc, label='trainingAcc', color=self.plotColor, linestyle='--')
-        plt.plot(self.valAcc, label='valAcc', color=self.plotColor, linestyle='-')
-        plt.plot(self.siAcc, label='siAcc', color=self.plotColor, linestyle='-.')
+        plt.plot(self.trainAccuracies, label='trainAcc', color=self.plotColor, linestyle='--')
+        plt.plot(self.valAccuracies, label='valAcc', color=self.plotColor, linestyle='-')
+        plt.plot(self.siAccuracies, label='siAcc', color=self.plotColor, linestyle='-.')
         leg = plt.legend(loc='best', fontsize=11, fancybox=True)
         leg.get_frame().set_alpha(0.3)
         plt.xlabel('epochs')
@@ -127,9 +141,29 @@ class CheckSIAndMakePlots(Callback):
         plt.title("Accuracy")
         plt.tight_layout()
         plt.subplots_adjust(top=0.85)
-        plt.suptitle(fileNamePre, fontsize=9)
+        plt.suptitle(fileNamePre[:int(len(fileNamePre)/2)] + '\n' + fileNamePre[int(len(fileNamePre)/2):], fontsize=10)
         plt.savefig(os.path.join(saveDir, fileNamePre + "-Plots.png"))
         plt.close()
+
+
+#################################################################
+# FIT ON LABELED DATA
+#################################################################
+
+
+def fit_on_labelled_data(iterNumber, LSTMLipReaderModel, trainDirsLabelled,
+        trainWordNumbersLabelled, trainWordsLabelled, batchSize, nEpochs, fileNamePre):
+    # Make generator: Labelled generator has labels as input
+    genTrainImagesLabelled = gen_these_word_images(trainDirsLabelled, trainWordNumbersLabelled,
+                                                    allWords=trainWordsLabelled, batchSize=batchSize, shuffle=True)
+    trainLabelledSteps = len(trainDirsLabelled) // batchSize
+    # Callbacks
+    checkSIAndMakePlots = CheckSIAndMakePlots()
+    earlyStop = EarlyStopping(monitor='val_loss', min_delta=0.0001, patience=5, verbose=True)
+    # FIT (gen)
+    LSTMLipReaderModelHistory = LSTMLipReaderModel.fit_generator(genTrainImagesLabelled, steps_per_epoch=trainLabelledSteps, epochs=nEpochs, verbose=True,
+                                                            callbacks=[checkSIAndMakePlots, earlyStop], validation_data=genValImages, validation_steps=valSteps)
+    return LSTMLipReaderModel, checkSIAndMakePlots
 
 
 #############################################################
@@ -137,7 +171,7 @@ class CheckSIAndMakePlots(Callback):
 #############################################################
 
 
-def add_unlabelled_data_to_labelled_data(trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled,
+def add_unlabelled_data_to_labelled_data(iterNumber, trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled,
                         trainDirsUnlabelled, trainWordNumbersUnlabelled,
                         LSTMLipReaderModel, batchSize, fileNamePre,
                         unlabelledPredMaxValueThresh = 0.99):
@@ -163,15 +197,15 @@ def add_unlabelled_data_to_labelled_data(trainDirsLabelled, trainWordNumbersLabe
     sortedUnlabelledPredMaxValues, sortedUnlabelledPredWords, sortedUnlabelledActualWords, sortedTrainDirsUnlabelled, sortedTrainWordNumbersUnlabelled = (
         np.array(t) for t in zip(*sorted(zip(unlabelledPredMaxValues, unlabelledPredWords, unlabelledActualWords, trainDirsUnlabelled, trainWordNumbersUnlabelled), reverse=True)))
     # Plot Accuracy
-    unlabelledAccuracyOnMaxValues = np.cumsum(np.equal(sortedUnlabelledPredWords, sortedUnlabelledActualWords)) / (1 + np.arange(len(sortedUnlabelledActualWords)))
-    plt.plot(unlabelledAccuracyOnMaxValues[:int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))], label='accuracy')
+    sortedUnlabelledAccuracyOnMaxValues = np.cumsum(np.equal(sortedUnlabelledPredWords, sortedUnlabelledActualWords)) / (1 + np.arange(len(sortedUnlabelledActualWords)))
+    plt.plot(sortedUnlabelledAccuracyOnMaxValues[:int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))], label='accuracy')
     plt.plot(sortedUnlabelledPredMaxValues[:int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))], label='max value')
     # plt.scatter(np.arange(int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))), sortedTrainWordNumbersUnlabelled[:int(labelledPercent/100*len(unlabelledAccuracyOnMaxValues))]/wordsPerVideo, label='wordNumber')
     plt.legend(loc='best')
     plt.xlabel("Number of instances considered, sorted by predicted max value")
     plt.ylabel("Accuracy")
-    plt.title("Unlabelled Accuracy with Max Values trained with 10%-1", fontsize=12)
-    plt.yticks(np.arange(0.95, 1.005, 0.005))
+    plt.title("Unlabelled Accuracy with Max Values trained with 10%-" + iterNumber, fontsize=12)
+    plt.yticks(np.arange(0.95, 1.01, 0.01))
     plt.gca().yaxis.grid(True)
     # plt.show()
     plt.savefig(os.path.join(saveDir, fileNamePre + "-unlabelled-accuracy-max-values.png"))
@@ -191,25 +225,162 @@ def add_unlabelled_data_to_labelled_data(trainDirsLabelled, trainWordNumbersLabe
     trainWordNumbersUnlabelled = sortedTrainWordNumbersUnlabelled[len(newTrainWordNumbersLabelled):]
     return trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled, trainDirsUnlabelled, trainWordNumbersUnlabelled
 
+#################################################################
+# SAVE LOSSES AND ACC
+#################################################################
+
+
+def save_losses_and_accuracies(checkSIAndMakePlots,
+        allApparentLabelledTrainLossesThruSelfLearning, allValLossesThruSelfLearning, allSiLossesThruSelfLearning,
+        allApparentLabelledTrainAccuraciesThruSelfLearning, allValAccuraciesThruSelfLearning, allSiAccuraciesThruSelfLearning,
+        trueLabelledTrainLossesThruPcOfLabelledData, apparentLabelledTrainLossesThruPcOfLabelledData,
+        percentageOfLabelledData, trainDirsLabelled, trainWordNumbersLabelled, batchSize,
+        valLossesThruPcOfLabelledData, siLossesThruPcOfLabelledData,
+        trueLabelledTrainAccuraciesThruPcOfLabelledData, apparentLabelledTrainAccuraciesThruPcOfLabelledData,
+        valAccuraciesThruPcOfLabelledData, siAccuraciesThruPcOfLabelledData):
+    # Append all losses and acc thru self-learning
+    # i.e. through all epochs of all iterations
+    allApparentLabelledTrainLossesThruSelfLearning.append(checkSIAndMakePlots.trainLosses)
+    allValLossesThruSelfLearning.append(checkSIAndMakePlots.valLosses)
+    allSiLossesThruSelfLearning.append(checkSIAndMakePlots.siLosses)
+    allApparentLabelledTrainAccuraciesThruSelfLearning.append(checkSIAndMakePlots.trainAccuracies)
+    allValAccuraciesThruSelfLearning.append(checkSIAndMakePlots.valAccuracies)
+    allSiAccuraciesThruSelfLearning.append(checkSIAndMakePlots.siAccuracies)
+    # To calc true tl and ta
+    genTrainImagesLabelled = gen_these_word_images(trainDirsLabelled, trainWordNumbersLabelled, batchSize=batchSize, shuffle=False)
+    trainUnlabelledSteps = len(trainDirsUnlabelled) // batchSize
+    [trueTl, trueTa] = LSTMLipReaderModel.evaluate_generator(genSiImages, siSteps)
+    # Append final losses and acc thru every iteration of self-learning
+    percentageOfLabelledData.append(len(trainDirsLabelled)/len(trainDirs))
+    trueLabelledTrainLossesThruPcOfLabelledData.append(trueTl)
+    apparentLabelledTrainLossesThruPcOfLabelledData.append(checkSIAndMakePlots.trainLosses[-1])
+    valLossesThruPcOfLabelledData.append(checkSIAndMakePlots.valLosses[-1])
+    siLossesThruPcOfLabelledData.append(checkSIAndMakePlots.siLosses[-1])
+    trueLabelledTrainAccuraciesThruPcOfLabelledData.append(trueTa)
+    apparentLabelledTrainAccuraciesThruPcOfLabelledData.append(checkSIAndMakePlots.trainAccuracies[-1])
+    valAccuraciesThruPcOfLabelledData.append(checkSIAndMakePlots.valAccuracies[-1])
+    siAccuraciesThruPcOfLabelledData.append(checkSIAndMakePlots.siAccuracies[-1])
 
 #################################################################
-# FIT ON LABELED DATA
+# PLOT ALL LOSSES AND ACC THRU ALL ITERS AND ALL EPOCHS OF SELF-LEARNING
 #################################################################
 
 
-def fit_on_labelled_data(iterNumber, LSTMLipReaderModel, trainDirsLabelled,
-        trainWordNumbersLabelled, trainWordsLabelled, batchSize, nEpochs, fileNamePre):
-    # Make generator: Labelled generator has labels as input
-    genTrainImagesLabelled = gen_these_word_images(trainDirsLabelled, trainWordNumbersLabelled,
-                                                    allWords=trainWordsLabelled, batchSize=batchSize, shuffle=True)
-    trainLabelledSteps = len(trainDirsLabelled) // batchSize
-    # Callbacks
-    checkSIAndMakePlots = CheckSIAndMakePlots()
-    earlyStop = EarlyStopping(monitor='val_loss', min_delta=0.0001, patience=5, verbose=True)
-    # FIT (gen)
-    LSTMLipReaderHistory = LSTMLipReaderModel.fit_generator(genTrainImagesLabelled, steps_per_epoch=trainLabelledSteps, epochs=nEpochs, verbose=True,
-                                                            callbacks=[checkSIAndMakePlots, earlyStop], validation_data=genValImages, validation_steps=valSteps)
-    return LSTMLipReaderModel
+def plot_all_losses_and_accuracies_thru_self_learning(
+        allApparentLabelledTrainLossesThruSelfLearning, allValLossesThruSelfLearning, allSiLossesThruSelfLearning,
+        allApparentLabelledTrainAccuraciesThruSelfLearning, allValAccuraciesThruSelfLearning, allSiAccuraciesThruSelfLearning,
+        fileNamePre, plotColor='g'
+        ):
+    # Plot name
+    plotName = '-'.join(fileNamePre.split('-')[:-1])
+    # Y values
+    tl = []
+    vl = []
+    sil = []
+    ta = []
+    va = []
+    sia = []
+    # X axis ticks
+    xAxisTicks = []
+    verticalLineX = []
+    count = -1
+    # All values
+    for iterNum in range(len(allApparentLabelledTrainLossesThruSelfLearning)):
+        for epochNum in range(len(allApparentLabelledTrainLossesThruSelfLearning[iterNum])):
+            count += 1
+            xAxisTicks.append(epochNum)
+            tl.append(allApparentLabelledTrainLossesThruSelfLearning[iterNum][epochNum])
+            vl.append(allValLossesThruSelfLearning[iterNum][epochNum])
+            sil.append(allSiLossesThruSelfLearning[iterNum][epochNum])
+            ta.append(allApparentLabelledTrainAccuraciesThruSelfLearning[iterNum][epochNum])
+            va.append(allValAccuraciesThruSelfLearning[iterNum][epochNum])
+            sia.append(allSiAccuraciesThruSelfLearning[iterNum][epochNum])
+        # Add a vertical line after every iteration
+        verticalLineX.append(count)
+    # Plot
+    plt.subplot(211)
+    plt.plot(tl, label='apparent train loss', color=plotColor, linestyle='--')
+    plt.plot(vl, label='val loss', color=plotColor, linestyle='-')
+    plt.plot(sil, label='SI loss', color=plotColor, linestyle='-.')
+    plt.xticks(np.arange(len(xAxisTicks)), xAxisTicks)
+    plt.tick_params(axis='y', which='both', labelleft='on', labelright='on')
+    for x in verticalLineX:
+        plt.plot([x, x], plt.gca().get_ylim(), color='k')
+    plt.xlabel('epochs within iterations of self-learning')
+    plt.ylabel('loss')
+    leg = plt.legend(loc='best', fontsize=11, fancybox=True)
+    leg.get_frame().set_alpha(0.3)
+    plt.title("Loss")
+    plt.tight_layout()
+    plt.subplot(212)
+    plt.plot(ta, label='apparent train acc', color=plotColor, linestyle='--')
+    plt.plot(va, label='val acc', color=plotColor, linestyle='-')
+    plt.plot(sia, label='SI acc', color=plotColor, linestyle='-.')
+    plt.xticks(np.arange(len(xAxisTicks)), xAxisTicks)
+    plt.yticks(np.arange(0, 1.1, 0.1))
+    plt.tick_params(axis='y', which='both', labelleft='on', labelright='on')
+    plt.gca().yaxis.grid(True)
+    for x in verticalLineX:
+        plt.plot([x, x], plt.gca().get_ylim(), color='k')
+    plt.xlabel('epochs within iterations of self-learning')
+    plt.ylabel('accuracy')
+    leg = plt.legend(loc='best', fontsize=11, fancybox=True)
+    leg.get_frame().set_alpha(0.3)
+    plt.title("Accuracy")
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.85)
+    plt.suptitle(plotName[:int(len(plotName)/2)] + '\n' + plotName[int(len(plotName)/2):], fontsize=10)
+    plt.savefig(os.path.join(saveDir, plotName + "-All-Loss-Acc.png"))
+    plt.close()
+
+
+#################################################################
+# PLOT LOSSES AND ACC THRU ITERS (PERCENTAGE OF LABELLED DATA)
+#################################################################
+
+
+def plot_losses_and_accuracies_thru_percentage_of_labelled_data(
+        percentageOfLabelledData,
+        apparentLabelledTrainLossesThruPcOfLabelledData, trueLabelledTrainLossesThruPcOfLabelledData,
+        valLossesThruPcOfLabelledData, siLossesThruPcOfLabelledData,
+        apparentLabelledTrainAccuraciesThruPcOfLabelledData, trueLabelledTrainAccuraciesThruPcOfLabelledData,
+        valAccuraciesThruPcOfLabelledData, siAccuraciesThruPcOfLabelledData,
+        fileNamePre, plotColor='g'
+        ):
+    plotName = '-'.join(fileNamePre.split('-')[:-1])
+    # Plot
+    plt.subplot(121)
+    plt.xlim([0, 100])
+    plt.plot(percentageOfLabelledData, apparentLabelledTrainLossesThruPcOfLabelledData, label='apparent train loss', color=plotColor, linestyle=':', marker='.')
+    plt.plot(percentageOfLabelledData, trueLabelledTrainLossesThruPcOfLabelledData, label='true train loss', color=plotColor, linestyle=':', marker='o')
+    plt.plot(percentageOfLabelledData, valLossesThruPcOfLabelledData, label='val loss', color=plotColor, linestyle=':', marker='D')
+    plt.plot(percentageOfLabelledData, siLossesThruPcOfLabelledData, label='SI loss', color=plotColor, linestyle=':', marker='+')
+    plt.xlabel('% of labelled data')
+    plt.ylabel('loss')
+    leg = plt.legend(loc='best', fontsize=11, fancybox=True)
+    leg.get_frame().set_alpha(0.3)
+    plt.title("Loss")
+    plt.tight_layout()
+    plt.subplot(122)
+    plt.xlim([0, 100])
+    plt.plot(percentageOfLabelledData, apparentLabelledTrainAccuraciesThruPcOfLabelledData, label='apparent train acc', color=plotColor, linestyle=':', marker='.')
+    plt.plot(percentageOfLabelledData, trueLabelledTrainAccuraciesThruPcOfLabelledData, label='true train acc', color=plotColor, linestyle=':', marker='o')
+    plt.plot(percentageOfLabelledData, valAccuraciesThruPcOfLabelledData, label='val acc', color=plotColor, linestyle=':', marker='D')
+    plt.plot(percentageOfLabelledData, siAccuraciesThruPcOfLabelledData, label='SI acc', color=plotColor, linestyle=':', marker='+')
+    plt.yticks(np.arange(0, 1.1, 0.1))
+    plt.tick_params(axis='y', which='both', labelleft='on', labelright='on')
+    plt.gca().yaxis.grid(True)
+    plt.xlabel('% of labelled data')
+    plt.ylabel('accuracy')
+    leg = plt.legend(loc='best', fontsize=11, fancybox=True)
+    leg.get_frame().set_alpha(0.3)
+    plt.title("Accuracy")
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.85)
+    plt.suptitle(plotName[:int(len(plotName)/2)] + '\n' + plotName[int(len(plotName)/2):], fontsize=10)
+    plt.savefig(os.path.join(saveDir, plotName + "-pcOfLabelledData-Loss-Acc.png"))
+    plt.close()
+
 
 
 #################################################################
@@ -272,6 +443,27 @@ for i in tqdm.tqdm(range(trainLabelledSteps)):
     for word in words:
         trainWordsLabelled = np.append(trainWordsLabelled, np.argmax(word))
 
+# All losses and accuracies thru self learning
+# List of lists of all losses and accuracies thru iterations of self-learning
+allApparentLabelledTrainLossesThruSelfLearning = []
+allValLossesThruSelfLearning = []
+allSiLossesThruSelfLearning = []
+allApparentLabelledTrainAccuraciesThruSelfLearning = []
+allValAccuraciesThruSelfLearning = []
+allSiAccuraciesThruSelfLearning = []
+
+# Losses and accuracies thru pc of labelled data
+# List of final losses and accuracies thru iterations of self-learning
+percentageOfLabelledData = []
+apparentLabelledTrainLossesThruPcOfLabelledData = []
+trueLabelledTrainLossesThruPcOfLabelledData = []
+valLossesThruPcOfLabelledData = []
+siLossesThruPcOfLabelledData = []
+apparentLabelledTrainAccuraciesThruPcOfLabelledData = []
+trueLabelledTrainAccuraciesThruPcOfLabelledData = []
+valAccuraciesThruPcOfLabelledData = []
+siAccuraciesThruPcOfLabelledData = []
+
 # To fit
 unlabelledPredMaxValueThresh = 0.99
 nIters = 100
@@ -280,11 +472,35 @@ for iterNumber in range(nIters):
     # Change fileNamePre
     fileNamePre = fileNamePre[:-2] + '-' + str(iterNumber)
     # Fit
-    LSTMLipReaderModel = fit_on_labelled_data(iterNumber, LSTMLipReaderModel, trainDirsLabelled,
-        trainWordNumbersLabelled, trainWordsLabelled, batchSize, nEpochs, fileNamePre)
+    LSTMLipReaderModel, checkSIAndMakePlots = fit_on_labelled_data(iterNumber,
+        LSTMLipReaderModel, trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled, batchSize, nEpochs, fileNamePre)
+    # Save losses and accs
+    save_losses_and_accuracies(checkSIAndMakePlots,
+        allApparentLabelledTrainLossesThruSelfLearning, allValLossesThruSelfLearning, allSiLossesThruSelfLearning,
+        allApparentLabelledTrainAccuraciesThruSelfLearning, allValAccuraciesThruSelfLearning, allSiAccuraciesThruSelfLearning,
+        percentageOfLabelledData, trainDirsLabelled, trainWordNumbersLabelled, batchSize,
+        trueLabelledTrainLossesThruPcOfLabelledData, apparentLabelledTrainLossesThruPcOfLabelledData,
+        valLossesThruPcOfLabelledData, siLossesThruPcOfLabelledData,
+        trueLabelledTrainAccuraciesThruPcOfLabelledData, apparentLabelledTrainAccuraciesThruPcOfLabelledData,
+        valAccuraciesThruPcOfLabelledData, siAccuraciesThruPcOfLabelledData)
+    # Plot loss and accuracy through all epochs of all iterations of self-learning
+    plot_all_losses_and_accuracies_thru_self_learning(
+        allApparentLabelledTrainLossesThruSelfLearning, allValLossesThruSelfLearning, allSiLossesThruSelfLearning,
+        allApparentLabelledTrainAccuraciesThruSelfLearning, allValAccuraciesThruSelfLearning, allSiAccuraciesThruSelfLearning,
+        fileNamePre
+    )
+    # Plot loss and accuracy through progress of percentage of labelled data
+    plot_losses_and_accuracies_thru_percentage_of_labelled_data(
+        percentageOfLabelledData,
+        apparentLabelledTrainLossesThruPcOfLabelledData, trueLabelledTrainLossesThruPcOfLabelledData,
+        valLossesThruPcOfLabelledData, siLossesThruPcOfLabelledData,
+        apparentLabelledTrainAccuraciesThruPcOfLabelledData, trueLabelledTrainAccuraciesThruPcOfLabelledData,
+        valAccuraciesThruPcOfLabelledData, siAccuraciesThruPcOfLabelledData,
+        fileNamePre
+    )
     # Change data
     trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled, trainDirsUnlabelled, trainWordNumbersUnlabelled \
-        = add_unlabelled_data_to_labelled_data(trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled,
+        = add_unlabelled_data_to_labelled_data(iterNumber, trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled,
                 trainDirsUnlabelled, trainWordNumbersUnlabelled, LSTMLipReaderModel,
                 batchSize, fileNamePre, unlabelledPredMaxValueThresh)
 
