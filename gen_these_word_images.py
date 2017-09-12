@@ -133,16 +133,23 @@ def gen_these_word_images(allDirs, allWordNumbers, allWords=None, batchSize=32,
                     # Note the corresponding mouth image in greyscale,
                     # padded with zeros before the frames, if
                     # len(wordMouthFiles) < framesPerWord),
-                    if reverseImageSequence:
-                        # in reverse order of frames. eg. If there are 7 frames:
-                        # 0 0 0 0 0 0 0 7 6 5 4 3 2 1
-                        wordImages[-f - 1] = np.reshape(cv2.imread(
-                            wordMouthFrame, 0) / 255., (nOfMouthPixels,)) - meanMouthImage
-                    else:
-                        # in same order. eg. If there are 7 frames:
-                        # 0 0 0 0 0 0 1 2 3 4 5 6 7
-                        wordImages[f + (framesPerWord - (min(len(wordMouthFiles), framesPerWord)))] \
-                            = np.reshape(cv2.imread(wordMouthFrame, 0) / 255., (nOfMouthPixels,)) - meanMouthImage
+                    def read_and_save_image(wordImages, f, wordMouthFrame, meanMouthImage, wordMouthFiles, vidDir, wordNum):
+                        try:
+                            if reverseImageSequence:
+                                # in reverse order of frames. eg. If there are 7 frames:
+                                # 0 0 0 0 0 0 0 7 6 5 4 3 2 1
+                                wordImages[-f - 1] = np.reshape(cv2.imread(
+                                    wordMouthFrame, 0) / 255., (nOfMouthPixels,)) - meanMouthImage
+                            else:
+                                # in same order. eg. If there are 7 frames:
+                                # 0 0 0 0 0 0 1 2 3 4 5 6 7
+                                wordImages[f + (framesPerWord - (min(len(wordMouthFiles), framesPerWord)))] \
+                                    = np.reshape(cv2.imread(wordMouthFrame, 0) / 255., (nOfMouthPixels,)) - meanMouthImage
+                            return wordImages
+                        except TypeError:
+                            print(vidDir, wordNum)
+                            read_and_save_image(wordImages, f, wordMouthFrame, meanMouthImage, wordMouthFiles, vidDir, wordNum)
+                    wordImages = read_and_save_image(wordImages, f, wordMouthFrame, meanMouthImage, wordMouthFiles, vidDir, wordNum)
                 # Save this in X
                 X[i] = wordImages
             # Yield the results
