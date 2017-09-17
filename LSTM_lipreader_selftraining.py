@@ -83,10 +83,10 @@ trainIdx = np.arange(len(trainDirs))
 np.random.shuffle(trainIdx)
 trainLabelledIdx = trainIdx[:int(labelledPercent/100*len(trainDirs))]
 trainUnlabelledIdx = trainIdx[int(labelledPercent/100*len(trainDirs)):]
-trainDirsLabelled = np.array(trainDirs)[trainLabelledIdx]
-trainWordNumbersLabelled = np.array(trainWordNumbers)[trainLabelledIdx]
-trainDirsUnlabelled = np.array(trainDirs)[trainUnlabelledIdx]
-trainWordNumbersUnlabelled = np.array(trainWordNumbersShuffled)[trainUnlabelledIdx]
+trainLabelledDirs = np.array(trainDirs)[trainLabelledIdx]
+trainLabelledWordNumbers = np.array(trainWordNumbers)[trainLabelledIdx]
+trainUnlabelledDirs = np.array(trainDirs)[trainUnlabelledIdx]
+trainUnlabelledWordNumbers = np.array(trainWordNumbers)[trainUnlabelledIdx]
 
 # Decide batchSize, nEpochs
 batchSize = 512
@@ -103,21 +103,21 @@ siSteps = len(siDirs) // batchSize
 # Find out correct labels for labelled data
 
 # First, use batchSize = 512
-genTrainImagesLabelled = gen_these_word_images(trainDirsLabelled, trainWordNumbersLabelled, batchSize=batchSize, shuffle=False)
-trainLabelledSteps = len(trainDirsLabelled) // batchSize
-trainWordsLabelled = np.empty((0))
+genTrainImagesLabelled = gen_these_word_images(trainLabelledDirs, trainLabelledWordNumbers, batchSize=batchSize, shuffle=False)
+trainLabelledSteps = len(trainLabelledDirs) // batchSize
+trainLabelledWords = np.empty((0))
 for i in tqdm.tqdm(range(trainLabelledSteps)):
     _, words = next(genTrainImagesLabelled)
     for word in words:
-        trainWordsLabelled = np.append(trainWordsLabelled, np.argmax(word))
+        trainLabelledWords = np.append(trainLabelledWords, np.argmax(word))
 
 # Then use batchSize = 1 for the remaining
-genTrainImagesLabelledRemaining = gen_these_word_images(trainDirsLabelled[trainLabelledSteps * batchSize:], trainWordNumbersLabelled[trainLabelledSteps * batchSize:], batchSize=1, shuffle=False)
-trainLabelledRemainingSteps = len(trainDirsLabelled) - trainLabelledSteps * batchSize
+genTrainImagesLabelledRemaining = gen_these_word_images(trainLabelledDirs[trainLabelledSteps * batchSize:], trainLabelledWordNumbers[trainLabelledSteps * batchSize:], batchSize=1, shuffle=False)
+trainLabelledRemainingSteps = len(trainLabelledDirs) - trainLabelledSteps * batchSize
 for i in tqdm.tqdm(range(trainLabelledRemainingSteps)):
     _, words = next(genTrainImagesLabelledRemaining)
     for word in words:
-        trainWordsLabelled = np.append(trainWordsLabelled, np.argmax(word))
+        trainLabelledWords = np.append(trainLabelledWords, np.argmax(word))
 
 # All losses and accuracies thru self learning
 # List of lists of all losses and accuracies thru iterations of self-learning
@@ -142,14 +142,16 @@ siAccuraciesThruPcOfLabelledData = []
 
 # List of trainDirs, etc. per iteration
 trainLabelledIdxItersList = []
+trainLabelledWordsItersList = []
 trainUnlabelledIdxItersList = []
 
 # Append trainLabelledIdxItersList, trainUnlabelledIdxItersList
 trainLabelledIdxItersList.append(trainLabelledIdx)
+trainLabelledWordsItersList.append(trainLabelledWords)
 trainUnlabelledIdxItersList.append(trainUnlabelledIdx)
 
 # To fit
-unlabelledPredMaxValueThresh = 0.95
+unlabelledLRPredMaxValueThresh = 0.95
 
 unlabelledCriticPredsYesThresh = 0.1
 nIters = 100
@@ -176,7 +178,7 @@ for iterNumber in range(initIter, nIters):
     earlyStop = EarlyStopping(monitor='val_loss', min_delta=0.001, patience=5, verbose=True)
     # Fit
     LSTMLipReaderModel, checkSIAndMakePlots = fit_on_labelled_data(iterNumber,
-        trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled,
+        trainLabelledDirs, trainLabelledWordNumbers, trainLabelledWords,
         LSTMLipReaderModel, checkSIAndMakePlots, earlyStop, genValImages, valSteps, batchSize, nEpochs)
     # Save losses and accs
     save_losses_and_accuracies(
@@ -184,7 +186,7 @@ for iterNumber in range(initIter, nIters):
         allApparentLabelledTrainLossesThruSelfLearning, allValLossesThruSelfLearning, allSiLossesThruSelfLearning,
         allApparentLabelledTrainAccuraciesThruSelfLearning, allValAccuraciesThruSelfLearning, allSiAccuraciesThruSelfLearning,
         trueLabelledTrainLossesThruPcOfLabelledData, apparentLabelledTrainLossesThruPcOfLabelledData,
-        percentageOfLabelledData, trainDirsLabelled, trainWordNumbersLabelled, trainDirs, batchSize,
+        percentageOfLabelledData, trainLabelledDirs, trainLabelledWordNumbers, trainDirs, batchSize,
         valLossesThruPcOfLabelledData, siLossesThruPcOfLabelledData,
         trueLabelledTrainAccuraciesThruPcOfLabelledData, apparentLabelledTrainAccuraciesThruPcOfLabelledData,
         valAccuraciesThruPcOfLabelledData, siAccuraciesThruPcOfLabelledData
@@ -205,13 +207,13 @@ for iterNumber in range(initIter, nIters):
         fileNamePre
     )
     # Change data
-    trainLabelledIdx, trainUnlabelledIdx, trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled, trainDirsUnlabelled, trainWordNumbersUnlabelled \
+    trainLabelledIdx, trainUnlabelledIdx, trainLabelledDirs, trainLabelledWordNumbers, trainLabelledWords, trainUnlabelledDirs, trainUnlabelledWordNumbers \
         = add_unlabelled_data_to_labelled_data(labelledPercent, iterNumber,
             trainLabelledIdx, trainUnlabelledIdx,
-            trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled,
-            trainDirsUnlabelled, trainWordNumbersUnlabelled,
+            trainLabelledDirs, trainLabelledWordNumbers, trainLabelledWords,
+            trainUnlabelledDirs, trainUnlabelledWordNumbers,
             LSTMLipReaderModel, batchSize, fileNamePre,
-            percentageOfLabelledData, unlabelledPredMaxValueThresh,
+            percentageOfLabelledData, unlabelledLRPredMaxValueThresh,
             criticModel, unlabelledCriticPredsYesThresh)
     # Append trainLabelledIdxItersList, trainUnlabelledIdxItersList
     trainLabelledIdxItersList.append(trainLabelledIdx)
@@ -234,6 +236,7 @@ for iterNumber in range(initIter, nIters):
         valAccuraciesThruPcOfLabelledData=valAccuraciesThruPcOfLabelledData,
         siAccuraciesThruPcOfLabelledData=siAccuraciesThruPcOfLabelledData,
         trainLabelledIdxItersList=trainLabelledIdxItersList,
+        trainLabelledWordsItersList=trainLabelledWordsItersList,
         trainUnlabelledIdxItersList=trainUnlabelledIdxItersList
     )
 

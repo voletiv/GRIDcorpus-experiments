@@ -132,12 +132,12 @@ class CheckSIAndMakePlots(Callback):
 #################################################################
 
 
-def fit_on_labelled_data(iterNumber, trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled,
+def fit_on_labelled_data(iterNumber, trainLabelledDirs, trainLabelledWordNumbers, trainLabelledWords,
         LSTMLipReaderModel, checkSIAndMakePlots, earlyStop, genValImages, valSteps, batchSize, nEpochs):
     # Make generator: Labelled generator has labels as input
-    genTrainImagesLabelled = gen_these_word_images(trainDirsLabelled, trainWordNumbersLabelled,
-                                                    allWords=trainWordsLabelled, batchSize=batchSize, shuffle=True)
-    trainLabelledSteps = len(trainDirsLabelled) // batchSize
+    genTrainImagesLabelled = gen_these_word_images(trainLabelledDirs, trainLabelledWordNumbers,
+                                                    allWords=trainLabelledWords, batchSize=batchSize, shuffle=True)
+    trainLabelledSteps = len(trainLabelledDirs) // batchSize
     # FIT (gen)
     LSTMLipReaderModelHistory = LSTMLipReaderModel.fit_generator(genTrainImagesLabelled, steps_per_epoch=trainLabelledSteps, epochs=nEpochs, verbose=True,
                                                             callbacks=[checkSIAndMakePlots, earlyStop], validation_data=genValImages, validation_steps=valSteps)
@@ -153,7 +153,7 @@ def save_losses_and_accuracies(LSTMLipReaderModel, checkSIAndMakePlots,
         allApparentLabelledTrainLossesThruSelfLearning, allValLossesThruSelfLearning, allSiLossesThruSelfLearning,
         allApparentLabelledTrainAccuraciesThruSelfLearning, allValAccuraciesThruSelfLearning, allSiAccuraciesThruSelfLearning,
         trueLabelledTrainLossesThruPcOfLabelledData, apparentLabelledTrainLossesThruPcOfLabelledData,
-        percentageOfLabelledData, trainDirsLabelled, trainWordNumbersLabelled, trainDirs, batchSize,
+        percentageOfLabelledData, trainLabelledDirs, trainLabelledWordNumbers, trainDirs, batchSize,
         valLossesThruPcOfLabelledData, siLossesThruPcOfLabelledData,
         trueLabelledTrainAccuraciesThruPcOfLabelledData, apparentLabelledTrainAccuraciesThruPcOfLabelledData,
         valAccuraciesThruPcOfLabelledData, siAccuraciesThruPcOfLabelledData):
@@ -166,7 +166,7 @@ def save_losses_and_accuracies(LSTMLipReaderModel, checkSIAndMakePlots,
     allValAccuraciesThruSelfLearning.append(checkSIAndMakePlots.valAccuracies)
     allSiAccuraciesThruSelfLearning.append(checkSIAndMakePlots.siAccuracies)
     # Append final losses and acc thru every iteration of self-learning
-    percentageOfLabelledData.append(len(trainDirsLabelled)/len(trainDirs)*100)
+    percentageOfLabelledData.append(len(trainLabelledDirs)/len(trainDirs)*100)
     apparentLabelledTrainLossesThruPcOfLabelledData.append(checkSIAndMakePlots.trainLosses[-1])
     valLossesThruPcOfLabelledData.append(checkSIAndMakePlots.valLosses[-1])
     siLossesThruPcOfLabelledData.append(checkSIAndMakePlots.siLosses[-1])
@@ -175,8 +175,8 @@ def save_losses_and_accuracies(LSTMLipReaderModel, checkSIAndMakePlots,
     siAccuraciesThruPcOfLabelledData.append(checkSIAndMakePlots.siAccuracies[-1])
     # To calc true tl and ta
     print("Calculating true accuracy...")
-    genTrainImagesLabelled = gen_these_word_images(trainDirsLabelled, trainWordNumbersLabelled, batchSize=batchSize, shuffle=False)
-    trainLabelledSteps = len(trainDirsLabelled) // batchSize
+    genTrainImagesLabelled = gen_these_word_images(trainLabelledDirs, trainLabelledWordNumbers, batchSize=batchSize, shuffle=False)
+    trainLabelledSteps = len(trainLabelledDirs) // batchSize
     [trueTl, trueTa] = LSTMLipReaderModel.evaluate_generator(genTrainImagesLabelled, trainLabelledSteps)
     trueLabelledTrainLossesThruPcOfLabelledData.append(trueTl)
     trueLabelledTrainAccuraciesThruPcOfLabelledData.append(trueTa)
@@ -325,10 +325,10 @@ def plot_losses_and_accuracies_thru_percentage_of_labelled_data(
 
 def add_unlabelled_data_to_labelled_data(labelledPercent, iterNumber,
                         trainLabelledIdx, trainUnlabelledIdx,
-                        trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled,
-                        trainDirsUnlabelled, trainWordNumbersUnlabelled,
+                        trainLabelledDirs, trainLabelledWordNumbers, trainLabelledWords,
+                        trainUnlabelledDirs, trainUnlabelledWordNumbers,
                         LSTMLipReaderModel, batchSize, fileNamePre,
-                        percentageOfLabelledData, unlabelledPredMaxValueThresh=0.99,
+                        percentageOfLabelledData, unlabelledLRPredMaxValueThresh=0.99,
                         criticModel=None, unlabelledCriticPredsYesThresh=0.1):
     print("Adding unlabelled data to labelled data...")
     if criticModel is not None:
@@ -336,37 +336,37 @@ def add_unlabelled_data_to_labelled_data(labelledPercent, iterNumber,
     else:
         print("...without Critic model")
     unlabelledLRPredMaxValues,  unlabelledCriticPreds, unlabelledLRPredWords, unlabelledActualWords = load_unlabelled_preds(
-        trainDirsUnlabelled, trainWordNumbersUnlabelled, batchSize, LSTMLipReaderModel, criticModel
+        trainUnlabelledDirs, trainUnlabelledWordNumbers, batchSize, LSTMLipReaderModel, criticModel
     )
     # Plot
     plot_max_values_and_accuracy(labelledPercent, iterNumber, fileNamePre, unlabelledLRPredMaxValues,
-        unlabelledLRPredWords, unlabelledActualWords, unlabelledPredMaxValueThresh, percentageOfLabelledData,
+        unlabelledLRPredWords, unlabelledActualWords, unlabelledLRPredMaxValueThresh, percentageOfLabelledData,
         unlabelledCriticPreds, unlabelledCriticPredsYesThresh)
     # Choose those in the unlabelled set that exceed max value thresh
-    maxValueFilter = unlabelledLRPredMaxValues > unlabelledPredMaxValueThresh
+    maxValueFilter = unlabelledLRPredMaxValues > unlabelledLRPredMaxValueThresh
     print("Adding", np.sum(maxValueFilter), "dirs to labelled set")
     if criticModel is not None:
         maxValueFilter = np.logical_and(maxValueFilter,
             unlabelledCriticPreds > unlabelledCriticPredsYesThresh)
         print("Reducing to", np.sum(maxValueFilter), "because of critic.")
-    newTrainIdx = trainUnlabelledIdx[maxValueFilter]
-    newTrainDirsLabelled = trainDirsUnlabelled[maxValueFilter]
-    newTrainWordNumbersLabelled = trainWordNumbersUnlabelled[maxValueFilter]
+    newTrainLabelledIdx = trainUnlabelledIdx[maxValueFilter]
+    newTrainDirsLabelled = trainUnlabelledDirs[maxValueFilter]
+    newTrainWordNumbersLabelled = trainUnlabelledWordNumbers[maxValueFilter]
     newTrainWords = np.array(unlabelledLRPredWords)[maxValueFilter]
     # Add them to the labelled directories
-    for i, directory, wordNum, predWord in zip(newTrainIdx, newTrainDirsLabelled, newTrainWordNumbersLabelled, newTrainWords):
+    for i, directory, wordNum, predWord in zip(newTrainLabelledIdx, newTrainDirsLabelled, newTrainWordNumbersLabelled, newTrainWords):
         trainLabelledIdx = np.append(trainLabelledIdx, i)
-        trainDirsLabelled = np.append(trainDirsLabelled, directory)
-        trainWordNumbersLabelled = np.append(trainWordNumbersLabelled, wordNum)
-        trainWordsLabelled = np.append(trainWordsLabelled, predWord)
+        trainLabelledDirs = np.append(trainLabelledDirs, directory)
+        trainLabelledWordNumbers = np.append(trainLabelledWordNumbers, wordNum)
+        trainLabelledWords = np.append(trainLabelledWords, predWord)
     # Remove them from unlabelled directories
     trainUnlabelledIdx = trainUnlabelledIdx[np.logical_not(maxValueFilter)]
-    trainDirsUnlabelled = trainDirsUnlabelled[np.logical_not(maxValueFilter)]
-    trainWordNumbersUnlabelled = trainWordNumbersUnlabelled[np.logical_not(maxValueFilter)]
-    return trainLabelledIdx, trainUnlabelledIdx, trainDirsLabelled, trainWordNumbersLabelled, trainWordsLabelled, trainDirsUnlabelled, trainWordNumbersUnlabelled
+    trainUnlabelledDirs = trainUnlabelledDirs[np.logical_not(maxValueFilter)]
+    trainUnlabelledWordNumbers = trainUnlabelledWordNumbers[np.logical_not(maxValueFilter)]
+    return trainLabelledIdx, trainUnlabelledIdx, trainLabelledDirs, trainLabelledWordNumbers, trainLabelledWords, trainUnlabelledDirs, trainUnlabelledWordNumbers
 
 
-def load_unlabelled_preds(trainDirsUnlabelled, trainWordNumbersUnlabelled, batchSize, LSTMLipReaderModel, criticModel=None):
+def load_unlabelled_preds(trainUnlabelledDirs, trainUnlabelledWordNumbers, batchSize, LSTMLipReaderModel, criticModel=None):
     # Find confidence values of predictions
     unlabelledActualWords = []
     unlabelledLRPreds = []
@@ -375,8 +375,8 @@ def load_unlabelled_preds(trainDirsUnlabelled, trainWordNumbersUnlabelled, batch
         unlabelledCriticPreds = []
     else:
         unlabelledCriticPreds = None
-    genTrainImagesUnlabelled = gen_these_word_images(trainDirsUnlabelled, trainWordNumbersUnlabelled, batchSize=batchSize, shuffle=False)
-    trainUnlabelledSteps = len(trainDirsUnlabelled) // batchSize
+    genTrainImagesUnlabelled = gen_these_word_images(trainUnlabelledDirs, trainUnlabelledWordNumbers, batchSize=batchSize, shuffle=False)
+    trainUnlabelledSteps = len(trainUnlabelledDirs) // batchSize
     for step in tqdm.tqdm(range(trainUnlabelledSteps)):
         vids, words = next(genTrainImagesUnlabelled)
         actualWords = np.argmax(words, axis=1)
@@ -390,9 +390,9 @@ def load_unlabelled_preds(trainDirsUnlabelled, trainWordNumbersUnlabelled, batch
             unlabelledLRPredWords.append(LRpredWords[i])
             if criticModel is not None:
                 unlabelledCriticPreds.append(criticPreds[i])
-    genTrainImagesUnlabelledRemaining = gen_these_word_images(trainDirsUnlabelled[trainUnlabelledSteps * batchSize:],
-        trainWordNumbersUnlabelled[trainUnlabelledSteps * batchSize:], batchSize=1, shuffle=False)
-    trainUnlabelledRemainingSteps = len(trainDirsUnlabelled) - trainUnlabelledSteps * batchSize
+    genTrainImagesUnlabelledRemaining = gen_these_word_images(trainUnlabelledDirs[trainUnlabelledSteps * batchSize:],
+        trainUnlabelledWordNumbers[trainUnlabelledSteps * batchSize:], batchSize=1, shuffle=False)
+    trainUnlabelledRemainingSteps = len(trainUnlabelledDirs) - trainUnlabelledSteps * batchSize
     for step in tqdm.tqdm(range(trainUnlabelledRemainingSteps)):
         vids, words = next(genTrainImagesUnlabelledRemaining)
         actualWords = np.argmax(words, axis=1)
@@ -415,7 +415,7 @@ def load_unlabelled_preds(trainDirsUnlabelled, trainWordNumbersUnlabelled, batch
 
 
 def plot_max_values_and_accuracy(labelledPercent, iterNumber, fileNamePre, unlabelledLRPredMaxValues, unlabelledLRPredWords, unlabelledActualWords,
-        unlabelledPredMaxValueThresh, percentageOfLabelledData, unlabelledCriticPreds=None, unlabelledCriticPredsYesThresh=0.1):
+        unlabelledLRPredMaxValueThresh, percentageOfLabelledData, unlabelledCriticPreds=None, unlabelledCriticPredsYesThresh=0.1):
     if unlabelledCriticPreds is None:
         unlabelledCriticPreds = np.zeros(len(unlabelledLRPredMaxValues),)
     # boolean
@@ -437,56 +437,57 @@ def plot_max_values_and_accuracy(labelledPercent, iterNumber, fileNamePre, unlab
             sortedUnlabelledPredsNumberWithCritic[i] = np.sum(criticFilter)
             sortedUnlabelledAccuracyWithCritic[i] = np.sum(np.equal(sortedUnlabelledLRPredWords[:i], sortedUnlabelledActualWords[:i])[criticFilter]) / (np.sum(criticFilter) + 1e-15)
     # Plots
-    xLen = np.sum(sortedUnlabelledLRPredMaxValues > (unlabelledPredMaxValueThresh - 0.04))
-    # plt.subplot(121)
-    plt.plot(sortedUnlabelledLRPredMaxValues[:xLen], label='max value - LR')
-    plt.plot(sortedUnlabelledAccuracyOnMaxValues[:xLen], label='accuracy - only LR')
-    if not noCritic:
-        plt.plot(sortedUnlabelledAccuracyWithCritic[:xLen], label='accuracy - LR+critic')
-    plt.legend(loc='best')
-    ax1 = plt.gca()
-    ax1.set_xlabel("Number of instances considered,\nsorted by predicted max value")
-    ax2 = ax1.twiny()
-    ax2.set_xlim(ax1.get_xlim())
-    xLabels = ax1.get_xticks()
-    for i in range(len(xLabels)):
-        xLabels[i] = int(100*xLabels[i]/len(unlabelledLRPredMaxValues)*(100-percentageOfLabelledData[-1]))/100
-    ax2.set_xticklabels(xLabels)
-    ax2.set_xlabel("Percentage of total data", fontsize=10)
-    yLimMin = min(sortedUnlabelledLRPredMaxValues[:xLen][-1],
-        sortedUnlabelledAccuracyOnMaxValues[:xLen][-1])
-    if not noCritic:
-        yLimMin = min(yLimMin, sortedUnlabelledAccuracyWithCritic[:xLen][-1])
-    plt.ylim([yLimMin-0.02, 1.02])
-    plt.gca().yaxis.grid(True)
-    plt.ylabel("Accuracy, max value")
-    # plt.title("Unlabelled Accuracy with Max Values", fontsize=12)
-    plt.title("Unlabelled accuracy, trained with " + str(labelledPercent) + "% - iter{0:02d}".format(iterNumber), fontsize=12, y=1.1)
-    plt.tight_layout()
-    # plt.subplot(122)
-    # plt.plot(np.arange(0, xLen, 1), label="Total number of data")
-    # plt.plot(sortedUnlabelledPredsNumberWithCritic[:xLen], label="Reduced number with critic")
-    # xTicks = [""] * xLen
-    # xTicks[0] = 1.
-    # xTicks[-1] = int(sortedUnlabelledLRPredMaxValues[:xLen][-1]*1000)/1000
-    # allTicks = np.arange(1., sortedUnlabelledLRPredMaxValues[:xLen][-1], (sortedUnlabelledLRPredMaxValues[:xLen][-1]-1)/xLen)
-    # tickThresh = 0.99
-    # for i, x in enumerate(allTicks):
-    #     if x <= tickThresh:
-    #         xTicks[i] = tickThresh
-    #         tickThresh -= 0.01
-    # plt.xticks(np.arange(len(xTicks)), xTicks)
-    # plt.gca().yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-    # plt.xlabel("Number of instances considered,\nsorted by predicted max value")
-    # plt.ylabel("Number of instances actually considered")
-    # plt.title("Number of instances")
-    # plt.tight_layout()
-    # plt.subplots_adjust(top=0.9)
-    # plt.suptitle("Trained with " + str(labelledPercent) + "% - iter{0:02d}".format(iterNumber), fontsize=12)
-    # # plt.show()
-    plt.savefig(os.path.join(saveDir, fileNamePre + "-unlabelled-accuracy-max-values.png"))
-    time.sleep(1)
-    plt.close()
+    xLen = np.sum(sortedUnlabelledLRPredMaxValues > (unlabelledLRPredMaxValueThresh - 0.04))
+    if xLen > 0:
+        # plt.subplot(121)
+        plt.plot(sortedUnlabelledLRPredMaxValues[:xLen], label='max value - LR')
+        plt.plot(sortedUnlabelledAccuracyOnMaxValues[:xLen], label='accuracy - only LR')
+        if not noCritic:
+            plt.plot(sortedUnlabelledAccuracyWithCritic[:xLen], label='accuracy - LR+critic')
+        plt.legend(loc='best')
+        ax1 = plt.gca()
+        ax1.set_xlabel("Number of instances considered,\nsorted by predicted max value")
+        ax2 = ax1.twiny()
+        ax2.set_xlim(ax1.get_xlim())
+        xLabels = ax1.get_xticks()
+        for i in range(len(xLabels)):
+            xLabels[i] = int(100*xLabels[i]/len(unlabelledLRPredMaxValues)*(100-percentageOfLabelledData[-1]))/100
+        ax2.set_xticklabels(xLabels)
+        ax2.set_xlabel("Percentage of total data", fontsize=10)
+        yLimMin = min(sortedUnlabelledLRPredMaxValues[:xLen][-1],
+            sortedUnlabelledAccuracyOnMaxValues[:xLen][-1])
+        if not noCritic:
+            yLimMin = min(yLimMin, sortedUnlabelledAccuracyWithCritic[:xLen][-1])
+        plt.ylim([yLimMin-0.02, 1.02])
+        plt.gca().yaxis.grid(True)
+        plt.ylabel("Accuracy, max value")
+        # plt.title("Unlabelled Accuracy with Max Values", fontsize=12)
+        plt.title("Unlabelled accuracy, trained with " + str(labelledPercent) + "% - iter{0:02d}".format(iterNumber), fontsize=12, y=1.1)
+        plt.tight_layout()
+        # plt.subplot(122)
+        # plt.plot(np.arange(0, xLen, 1), label="Total number of data")
+        # plt.plot(sortedUnlabelledPredsNumberWithCritic[:xLen], label="Reduced number with critic")
+        # xTicks = [""] * xLen
+        # xTicks[0] = 1.
+        # xTicks[-1] = int(sortedUnlabelledLRPredMaxValues[:xLen][-1]*1000)/1000
+        # allTicks = np.arange(1., sortedUnlabelledLRPredMaxValues[:xLen][-1], (sortedUnlabelledLRPredMaxValues[:xLen][-1]-1)/xLen)
+        # tickThresh = 0.99
+        # for i, x in enumerate(allTicks):
+        #     if x <= tickThresh:
+        #         xTicks[i] = tickThresh
+        #         tickThresh -= 0.01
+        # plt.xticks(np.arange(len(xTicks)), xTicks)
+        # plt.gca().yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        # plt.xlabel("Number of instances considered,\nsorted by predicted max value")
+        # plt.ylabel("Number of instances actually considered")
+        # plt.title("Number of instances")
+        # plt.tight_layout()
+        # plt.subplots_adjust(top=0.9)
+        # plt.suptitle("Trained with " + str(labelledPercent) + "% - iter{0:02d}".format(iterNumber), fontsize=12)
+        # # plt.show()
+        plt.savefig(os.path.join(saveDir, fileNamePre + "-unlabelled-accuracy-max-values.png"))
+        time.sleep(1)
+        plt.close()
 
 
 
@@ -528,7 +529,7 @@ def plot_max_values_and_accuracy(labelledPercent, iterNumber, fileNamePre, unlab
 
 # # Sort all according to unlabelledPredMaxValues
 # sortedUnlabelledPredMaxValues, sortedUnlabelledLRPredWords, sortedUnlabelledActualWords, sortedTrainDirsUnlabelled, sortedTrainWordNumbersUnlabelled = (
-#     np.array(t) for t in zip(*sorted(zip(unlabelledPredMaxValues, unlabelledPredWords, unlabelledActualWords, trainDirsUnlabelled, trainWordNumbersUnlabelled), reverse=True)))
+#     np.array(t) for t in zip(*sorted(zip(unlabelledPredMaxValues, unlabelledPredWords, unlabelledActualWords, trainUnlabelledDirs, trainUnlabelledWordNumbers), reverse=True)))
 
 # # Plot Accuracy
 # unlabelledAccuracyOnMaxValues = np.cumsum(np.equal(sortedUnlabelledLRPredWords, sortedUnlabelledActualWords)) / (1 + np.arange(len(sortedUnlabelledActualWords)))
@@ -559,18 +560,18 @@ def plot_max_values_and_accuracy(labelledPercent, iterNumber, fileNamePre, unlab
 # # plt.show()
 
 # # Choose those in the unlabelled set that exceed max value thresh
-# unlabelledPredMaxValueThresh = 0.99
-# maxValueFilter = sortedUnlabelledPredMaxValues > unlabelledPredMaxValueThresh
+# unlabelledLRPredMaxValueThresh = 0.99
+# maxValueFilter = sortedUnlabelledPredMaxValues > unlabelledLRPredMaxValueThresh
 # newTrainDirsLabelled = sortedTrainDirsUnlabelled[maxValueFilter]
 # newTrainWordNumbersLabelled = sortedTrainWordNumbersUnlabelled[maxValueFilter]
 # newTrainWords = sortedUnlabelledLRPredWords[maxValueFilter]
 # # Add them to the training directories
 # for directory, wordNum, predWord in zip(newTrainDirsLabelled, newTrainWordNumbersLabelled, newTrainWords):
-#     trainDirsLabelled.append(directory)
-#     trainWordNumbersLabelled.append(wordNum)
-#     trainWordsLabelled.append(np_utils.to_categorical(predWord, wordsVocabSize))
+#     trainLabelledDirs.append(directory)
+#     trainLabelledWordNumbers.append(wordNum)
+#     trainLabelledWords.append(np_utils.to_categorical(predWord, wordsVocabSize))
 
 # # Remove them from unlabelled directories
-# trainDirsUnlabelled = sortedTrainDirsUnlabelled[len(newTrainDirsLabelled):]
-# trainWordNumbersUnlabelled = sortedTrainWordNumbersUnlabelled[len(newTrainWordNumbersLabelled):]
+# trainUnlabelledDirs = sortedTrainDirsUnlabelled[len(newTrainDirsLabelled):]
+# trainUnlabelledWordNumbers = sortedTrainWordNumbersUnlabelled[len(newTrainWordNumbersLabelled):]
 
