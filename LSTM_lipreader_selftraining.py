@@ -43,6 +43,8 @@ def make_LSTM_lipreader_model():
 # LOAD CRITIC
 #############################################################
 
+criticModel = None
+
 # NEW
 reverseImageSequence = True
 wordsVocabSize = 51
@@ -151,9 +153,9 @@ trainLabelledWordsItersList.append(trainLabelledWords)
 trainUnlabelledIdxItersList.append(trainUnlabelledIdx)
 
 # To fit
-unlabelledLRPredMaxValueThresh = 0.95
+unlabelledLRPredMaxValueThresh = 0.8
 
-unlabelledCriticPredsYesThresh = 0.1
+unlabelledCriticPredsYesThresh = 0.8
 nIters = 100
 initIter = 0
 
@@ -163,13 +165,17 @@ remodel = False
 # FIT
 for iterNumber in range(initIter, nIters):
     print("\nITER", iterNumber, "\n")
-    print("Training with", len(trainDirsLabelledItersList[-1]), "words")
+    print("Training with", len(trainLabelledIdxItersList[-1]), "words")
     # Remodel
     if remodel or iterNumber == 0:
         LSTMLipReaderModel, LSTMEncoder, fileNamePre = make_LSTM_lipreader_model()
         # Change fileNamePre
         fileNamePre += "-GRIDcorpus-s0107-10-si-s1314"
-        fileNamePre += "-{0:02d}".format(labelledPercent) + "PercentSelfTraining-iter00"
+        fileNamePre += "-{0:02d}".format(labelledPercent)
+        fileNamePre += "PercentSelfTraining-LRthresh{0:.2f}".format(unlabelledLRPredMaxValueThresh)
+        if criticModel is not None:
+            fileNamePre += "-criticThresh{0:.2f}".format(unlabelledCriticPredsYesThresh)
+        fileNamePre += "iter00"
     # Remodel / finetune
     fileNamePre = '-'.join(fileNamePre.split('-')[:-1]) + '-iter{0:02d}'.format(iterNumber)
     print(fileNamePre)
@@ -217,6 +223,7 @@ for iterNumber in range(initIter, nIters):
             criticModel, unlabelledCriticPredsYesThresh)
     # Append trainLabelledIdxItersList, trainUnlabelledIdxItersList
     trainLabelledIdxItersList.append(trainLabelledIdx)
+    trainLabelledWordsItersList.append(trainLabelledWords)
     trainUnlabelledIdxItersList.append(trainUnlabelledIdx)
     # Save
     np.savez(os.path.join(saveDir, '-'.join(fileNamePre.split('-')[:-1])), "-variables.npz",
@@ -248,7 +255,7 @@ vl = []
 va = []
 sil = []
 sia = []
-mediaDir = '/media/voletiv/01D2BF774AC76280/GRIDcorpusResults/SELF-TRAINING/7-20pc-finetuning-critic/'
+mediaDir = '/media/voletiv/01D2BF774AC76280/GRIDcorpusResults/SELF-TRAINING/1-10pc-finetuning-LR0.9/'
 for file in sorted(glob.glob(os.path.join(mediaDir, "*iter00*"))):
     if 'epoch' in file:
         tl.append(float('.'.join(file.split('/')[-1].split('.')[:-1]).split('-')[-6][2:]))
@@ -257,6 +264,7 @@ for file in sorted(glob.glob(os.path.join(mediaDir, "*iter00*"))):
         va.append(float('.'.join(file.split('/')[-1].split('.')[:-1]).split('-')[-3][2:]))
         sil.append(float('.'.join(file.split('/')[-1].split('.')[:-1]).split('-')[-2][3:]))
         sia.append(float('.'.join(file.split('/')[-1].split('.')[:-1]).split('-')[-1][3:]))
+
 # Save
 allApparentLabelledTrainLossesThruSelfLearning.append(tl)
 allValLossesThruSelfLearning.append(vl)
@@ -273,3 +281,6 @@ apparentLabelledTrainAccuraciesThruPcOfLabelledData.append(ta[-1])
 trueLabelledTrainAccuraciesThruPcOfLabelledData.append(ta[-1])
 valAccuraciesThruPcOfLabelledData.append(va[-1])
 siAccuraciesThruPcOfLabelledData.append(sia[-1])
+
+# Load Lip Reader Model
+LSTMLipReaderModel.load_weights(os.path.join(mediaDir, 'LSTMLipReader-revSeq-Mask-LSTMh256-tanh-depth2-enc64-relu-adam-1e-03-tMouth-valMouth-NOmeanSub-GRIDcorpus-s0107-10-si-s1314-10PercentSelfTraining-LRthresh0.90-iter00-epoch079-tl1.1377-ta0.6460-vl1.5886-va0.5360-sil3.9002-sia0.2181.hdf5'))

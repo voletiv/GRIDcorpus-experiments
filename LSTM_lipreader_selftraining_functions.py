@@ -1,5 +1,6 @@
 import glob
 import matplotlib.pyplot as plt
+import mpl_toolkits.axisartist as AA
 import numpy as np
 import os
 import time
@@ -8,6 +9,7 @@ import time
 # with tf.device('/cpu:0'):
 
 from keras.callbacks import Callback
+from mpl_toolkits.axes_grid1 import host_subplot
 
 #################################################################
 # IMPORT
@@ -230,8 +232,11 @@ def plot_all_losses_and_accuracies_thru_self_learning(
         plt.plot([x, x], plt.gca().get_ylim(), color='k')
     plt.xlabel('epochs within iterations of self-learning')
     plt.ylabel('loss')
-    leg = plt.legend(loc='best', fontsize=11, fancybox=True)
+    leg = plt.legend(loc='best', fontsize=10, fancybox=True)
     leg.get_frame().set_alpha(0.3)
+    yMin = min(min(tl), min(vl), min(sil))
+    yMax = max(max(tl), max(vl), max(sil))
+    plt.ylim([yMin, yMax])
     plt.title("Loss")
     plt.tight_layout()
     plt.subplot(212)
@@ -246,8 +251,9 @@ def plot_all_losses_and_accuracies_thru_self_learning(
         plt.plot([x, x], plt.gca().get_ylim(), color='k')
     plt.xlabel('epochs within iterations of self-learning')
     plt.ylabel('accuracy')
-    leg = plt.legend(loc='best', fontsize=11, fancybox=True)
+    leg = plt.legend(loc='best', fontsize=10, fancybox=True)
     leg.get_frame().set_alpha(0.3)
+    plt.ylim([0, 1])
     plt.title("Accuracy")
     plt.tight_layout()
     plt.subplots_adjust(top=0.85)
@@ -286,8 +292,11 @@ def plot_losses_and_accuracies_thru_percentage_of_labelled_data(
     plt.xticks(xTicks, fontsize=8, rotation=90)
     plt.xlabel('% of labelled data')
     plt.ylabel('loss')
-    leg = plt.legend(loc='best', fontsize=11, fancybox=True)
+    leg = plt.legend(loc='best', fontsize=10, fancybox=True)
     leg.get_frame().set_alpha(0.3)
+    yMin = min(min(apparentLabelledTrainLossesThruPcOfLabelledData), min(trueLabelledTrainLossesThruPcOfLabelledData), min(valLossesThruPcOfLabelledData), min(siLossesThruPcOfLabelledData))
+    yMax = max(max(apparentLabelledTrainLossesThruPcOfLabelledData), max(trueLabelledTrainLossesThruPcOfLabelledData), max(valLossesThruPcOfLabelledData), max(siLossesThruPcOfLabelledData))
+    plt.ylim([yMin, yMax])
     plt.title("Loss")
     plt.tight_layout()
     # Plot accuracies
@@ -307,8 +316,9 @@ def plot_losses_and_accuracies_thru_percentage_of_labelled_data(
     plt.xticks(xTicks, fontsize=8, rotation=90)
     plt.xlabel('% of labelled data')
     plt.ylabel('accuracy')
-    leg = plt.legend(loc='best', fontsize=11, fancybox=True)
+    leg = plt.legend(loc='best', fontsize=10, fancybox=True)
     leg.get_frame().set_alpha(0.3)
+    plt.ylim([0, 1])
     plt.title("Accuracy")
     plt.tight_layout()
     plt.subplots_adjust(top=0.85)
@@ -439,57 +449,79 @@ def plot_max_values_and_accuracy(labelledPercent, iterNumber, fileNamePre, unlab
     # Plots
     xLen = np.sum(sortedUnlabelledLRPredMaxValues > (unlabelledLRPredMaxValueThresh - 0.04))
     if xLen > 0:
-        # plt.subplot(121)
-        plt.plot(sortedUnlabelledLRPredMaxValues[:xLen], label='max value - LR')
-        plt.plot(sortedUnlabelledAccuracyOnMaxValues[:xLen], label='accuracy - only LR')
-        if not noCritic:
-            plt.plot(sortedUnlabelledAccuracyWithCritic[:xLen], label='accuracy - LR+critic')
-        plt.legend(loc='best')
-        ax1 = plt.gca()
-        ax1.set_xlabel("Number of instances considered,\nsorted by predicted max value")
+        # All axes
+        ax1 = host_subplot(111, axes_class=AA.Axes)
         ax2 = ax1.twiny()
-        ax2.set_xlim(ax1.get_xlim())
-        xLabels = ax1.get_xticks()
-        for i in range(len(xLabels)):
-            xLabels[i] = int(100*xLabels[i]/len(unlabelledLRPredMaxValues)*(100-percentageOfLabelledData[-1]))/100
-        ax2.set_xticklabels(xLabels)
+        ax3 = ax1.twiny()
+        ax3.axis['top'] = ax3.get_grid_helper().new_fixed_axis(loc='top', axes=ax3, offset=(0, 40))
+        ax3.axis['top'].toggle(all=True)
+        # LR pred max sorted values
+        myX = np.arange(xLen)
+        p1, = ax1.plot(myX, sortedUnlabelledLRPredMaxValues[:xLen], label='max value - LR', color='b')
+        ax1.set_xlabel("Number of instances considered,\nsorted by predicted max value")
+        # Unlabelled accuracy on LR pred max values
+        for i in range(len(myX)):
+            myX[i] = int(100*myX[i]/len(unlabelledLRPredMaxValues)*(100-percentageOfLabelledData[-1]))/100
+        p2, = ax2.plot(myX, sortedUnlabelledAccuracyOnMaxValues[:xLen], label='accuracy - only LR')
         ax2.set_xlabel("Percentage of total data", fontsize=10)
+        # Unlabelled accuracy on LR pred max values, with critic
+        if not noCritic:
+            for i in range(len(myX)):
+                myX[i] = int(100*sortedUnlabelledPredsNumberWithCritic[i]/len(unlabelledLRPredMaxValues)*(100-percentageOfLabelledData[-1]))/100
+            p3, = ax3.plot(myX, sortedUnlabelledAccuracyWithCritic[:xLen], label='accuracy - LR+critic')
+            ax3.set_xlabel("With critic - lesser percentage of total data", fontsize=10)
         yLimMin = min(sortedUnlabelledLRPredMaxValues[:xLen][-1],
             sortedUnlabelledAccuracyOnMaxValues[:xLen][-1])
         if not noCritic:
             yLimMin = min(yLimMin, sortedUnlabelledAccuracyWithCritic[:xLen][-1])
-        plt.ylim([yLimMin-0.02, 1.02])
+        plt.ylim([yLimMin-0.01, 1.01])
         plt.gca().yaxis.grid(True)
-        plt.ylabel("Accuracy, max value")
-        # plt.title("Unlabelled Accuracy with Max Values", fontsize=12)
-        plt.title("Unlabelled accuracy, trained with " + str(labelledPercent) + "% - iter{0:02d}".format(iterNumber), fontsize=12, y=1.1)
+        plt.ylabel("Max value,\nUnlabelled accuracy, trained from " + str(labelledPercent) + "% - iter{0:02d}".format(iterNumber))
+        # plt.title("Unlabelled accuracy, trained with " + str(labelledPercent) + "% - iter{0:02d}".format(iterNumber), fontsize=12, y=3.1)
+        plt.legend()
         plt.tight_layout()
-        # plt.subplot(122)
-        # plt.plot(np.arange(0, xLen, 1), label="Total number of data")
-        # plt.plot(sortedUnlabelledPredsNumberWithCritic[:xLen], label="Reduced number with critic")
-        # xTicks = [""] * xLen
-        # xTicks[0] = 1.
-        # xTicks[-1] = int(sortedUnlabelledLRPredMaxValues[:xLen][-1]*1000)/1000
-        # allTicks = np.arange(1., sortedUnlabelledLRPredMaxValues[:xLen][-1], (sortedUnlabelledLRPredMaxValues[:xLen][-1]-1)/xLen)
-        # tickThresh = 0.99
-        # for i, x in enumerate(allTicks):
-        #     if x <= tickThresh:
-        #         xTicks[i] = tickThresh
-        #         tickThresh -= 0.01
-        # plt.xticks(np.arange(len(xTicks)), xTicks)
-        # plt.gca().yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-        # plt.xlabel("Number of instances considered,\nsorted by predicted max value")
-        # plt.ylabel("Number of instances actually considered")
-        # plt.title("Number of instances")
-        # plt.tight_layout()
-        # plt.subplots_adjust(top=0.9)
-        # plt.suptitle("Trained with " + str(labelledPercent) + "% - iter{0:02d}".format(iterNumber), fontsize=12)
-        # # plt.show()
+        # plt.show()
         plt.savefig(os.path.join(saveDir, fileNamePre + "-unlabelled-accuracy-max-values.png"))
         time.sleep(1)
         plt.close()
 
 
+# myX = [0, 1, 2, 3]
+# myY1 = [0, 1, 2, 3]
+# myY2 = [2, 3, 4, 5]
+# myY3 = [4, 5, 6, 7]
+
+# ax1 = host_subplot(111, axes_class=AA.Axes)
+# # plt.subplots_adjust(top=25)
+# ax2 = ax1.twiny()
+# ax3 = ax1.twiny()
+# ax3.axis['top'] = ax3.get_grid_helper().new_fixed_axis(loc='top', axes=ax3, offset=(0, 40))
+# ax3.axis['top'].toggle(all=True)
+
+# p1, = ax1.plot(myX, myY1, label='1', color='b')
+
+# ax1.set_xlabel("Number of instances considered,\nsorted by predicted max value")
+# ax2.set_xlabel("Percentage of total data")
+# ax3.set_xlabel("Compressed Percentage of total data")
+
+# for i in range(len(myX)):
+#     myX[i] += 10
+
+# p2, = ax2.plot(myX, myY2, label='2', color='g')
+
+# for i in range(len(myX)):
+#     myX[i] += 100
+
+# p3, = ax3.plot(myX, myY3, label='3', color='r')
+
+# ax1.axis["bottom"].label.set_color(p1.get_color())
+# ax2.axis["top"].label.set_color(p2.get_color())
+# ax3.axis["top"].label.set_color(p3.get_color())
+
+# plt.text(0.5, 9.5, "Unlabelled accuracy, trained with ", fontsize=12)
+
+# plt.tight_layout()
+# plt.show()
 
 #################################################################
 # REFERENCES
