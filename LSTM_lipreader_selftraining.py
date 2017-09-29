@@ -155,7 +155,7 @@ trainUnlabelledIdxItersList.append(trainUnlabelledIdx)
 # To fit
 unlabelledLRPredMaxValueThresh = 0.8
 
-unlabelledCriticPredsYesThresh = 0.8
+unlabelledCriticPredsYesThresh = 0.9
 nIters = 100
 initIter = 0
 
@@ -175,7 +175,7 @@ for iterNumber in range(initIter, nIters):
         fileNamePre += "PercentSelfTraining-LRthresh{0:.2f}".format(unlabelledLRPredMaxValueThresh)
         if criticModel is not None:
             fileNamePre += "-criticThresh{0:.2f}".format(unlabelledCriticPredsYesThresh)
-        fileNamePre += "iter00"
+        fileNamePre += "-iter00"
     # Remodel / finetune
     fileNamePre = '-'.join(fileNamePre.split('-')[:-1]) + '-iter{0:02d}'.format(iterNumber)
     print(fileNamePre)
@@ -283,4 +283,12 @@ valAccuraciesThruPcOfLabelledData.append(va[-1])
 siAccuraciesThruPcOfLabelledData.append(sia[-1])
 
 # Load Lip Reader Model
+LSTMLipReaderModel, LSTMEncoder, fileNamePre = make_LSTM_lipreader_model()
+fileNamePre += "-GRIDcorpus-s0107-10-si-s1314"
+fileNamePre += "-{0:02d}".format(labelledPercent)
+fileNamePre += "PercentSelfTraining-LRthresh{0:.2f}".format(unlabelledLRPredMaxValueThresh)
+if criticModel is not None:
+    fileNamePre += "-criticThresh{0:.2f}".format(unlabelledCriticPredsYesThresh)
+
+fileNamePre += "-iter00"
 LSTMLipReaderModel.load_weights(os.path.join(mediaDir, 'LSTMLipReader-revSeq-Mask-LSTMh256-tanh-depth2-enc64-relu-adam-1e-03-tMouth-valMouth-NOmeanSub-GRIDcorpus-s0107-10-si-s1314-10PercentSelfTraining-LRthresh0.90-iter00-epoch079-tl1.1377-ta0.6460-vl1.5886-va0.5360-sil3.9002-sia0.2181.hdf5'))
