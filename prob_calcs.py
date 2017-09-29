@@ -1,3 +1,6 @@
+import numpy as np
+import os
+
 # # BAYES
 # P(A and B) = P(A | B) * P(B) = P(B | A) * P(A)
 # P(B | A) = P(A | B) * P(B) / P(A)
@@ -63,7 +66,6 @@ Cn = FNR*LRp + TNR*LRn
 # Thus,
 # P(LR- | C-) = P(C- | LR-) * P(LR-) / P(C-) = .76 * .15 / .43 = .26
 LRnGivenCn = TNR * LRn / (Cn + 1e-15)
-
 
 
 # WHAT IF LIPREADER IS BAD
