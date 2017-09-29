@@ -1,51 +1,51 @@
-1b
-1l
-1p
-1s
-2b
-2g
-2r
-2w
-3a
-3b
-3i
-3w
-4a
-4b
-4c
-4d
-4e
-4f
-4g
-4h
-4i
-4j
-4k
-4l
-4m
-4n
-4o
-4p
-4q
-4r
-4s
-4t
-4u
-4v
-4x
-4y
-4z
-51
-52
-53
-54
-55
-56
-57
-58
-59
-5z
-6a
-6n
-6p
-6s
+0 a
+1 again
+2 at
+3 b
+4 bin
+5 blue
+6 by
+7 c
+8 d
+9 e
+10 eight
+11 f
+12 five
+13 four
+14 g
+15 green
+16 h
+17 i
+18 in
+19 j
+20 k
+21 l
+22 lay
+23 m
+24 n
+25 nine
+26 now
+27 o
+28 one
+29 p
+30 place
+31 please
+32 q
+33 r
+34 red
+35 s
+36 set
+37 seven
+38 six
+39 soon
+40 t
+41 three
+42 two
+43 u
+44 v
+45 white
+46 with
+47 x
+48 y
+49 z
+50 zero
