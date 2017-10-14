@@ -399,20 +399,22 @@ for speakerDir in tqdm.tqdm(sorted(glob.glob(os.path.join(rootDir, '*/')))):
 # for speaker in tqdm.tqdm(sorted(([1, 2, 3, 4, 5, 6, 7, 10]))):
 
 
+makeVideos = False
 for i, (vidDir, wordNum, wordIndex) in tqdm.tqdm(enumerate(zip(dirs, word_numbers, word_idx)), total=len(dirs)):
-    makeVideos = False
-    frameFiles = sorted(glob.glob(os.path.join(vidDir, '*Frame*.jpg')))
-    if len(frameFiles) == 0:
+    if 's07/' in vidDir:
         makeVideos = True
-    elif frameFiles[-1].split('/')[-1].split('.')[0][-2:] == '75':
-        makeVideos = True
+    # if len(frameFiles) != 75:
+    #     makeVideos = True
+    # elif frameFiles[-1].split('/')[-1].split('.')[0][-2:] == '75':
+    #     makeVideos = True
     if makeVideos:
+        frameFiles = sorted(glob.glob(os.path.join(vidDir, '*Frame*.jpg')))
         print("Extracting from", vidDir)
         command = "ffmpeg -i " + vidDir[:-1] + ".mpg -y -an -qscale 0 -f image2 " + vidDir[:-1] + '/' +  vidDir.split('/')[-2] + "Frame%02d.jpg"
         os.system(command)
+        print("Renaming")
         for num in range(75):
             command = "mv " + vidDir[:-1] + '/' +  vidDir.split('/')[-2] + "Frame{0:02d}.jpg".format(num+1) + " " +  vidDir[:-1] + '/' +  vidDir.split('/')[-2] + "Frame{0:02d}.jpg".format(num)
-            print("Renaming", num+1, "to", num)
             ret = os.system(command)
 
 
