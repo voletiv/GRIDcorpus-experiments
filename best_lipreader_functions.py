@@ -10,10 +10,11 @@ import tqdm
 
 from keras.utils import np_utils
 from keras.models import Model, Sequential
-from keras.layers import Input, Masking, Dense
+from keras.layers import Input, Masking
 from keras.layers.wrappers import TimeDistributed
+from keras.layers import Conv2D, Flatten, Dense
 from keras.layers.recurrent import LSTM
-from keras.optimizers import SGD
+from keras.optimizers import SGD, Adam
 from keras.callbacks import Callback, EarlyStopping, ModelCheckpoint
 
 from grid_params import *
@@ -23,17 +24,25 @@ from grid_params import *
 #############################################################
 
 
-def make_best_LSTM_lipreader_model(fc1_units=128,
-                                   LSTM1_units=128,
-                                   LSTM2_units=128,
+def make_best_LSTM_lipreader_model(conv1_units=128,
+                                   conv2_units=256,
+                                   fc1_units=1024,
+                                   LSTM1_units=256,
+                                   LSTM2_units=256,
                                    vocab_size=51):
     # According to https://arxiv.org/abs/1601.08188
-    # Input
-    my_input = Input(shape=(MAX_FRAMES_PER_WORD, NUM_OF_MOUTH_PIXELS))
-    # Masking
-    x = Masking(mask_value=0.0)(my_input)
+        # Input
+    my_input = Input(shape=(MAX_FRAMES_PER_WORD, MOUTH_H, MOUTH_W, 1))
+    # Mask
+    x = TimeDistributed(Masking(mask_value=0.0))(my_input)
+    # Conv1
+    x = TimeDistributed(Conv2D(conv1_units, 3, activation='relu'))(x)
+    # Conv1
+    x = TimeDistributed(Conv2D(conv2_units, 3, activation='relu'))(x)
+    # Flatten
+    x = TimeDistributed(Flatten())(x)
     # One feed-forward layer
-    x = TimeDistributed(Dense(fc1_units,
+    x = TimeDistributed(Dense(fc1_units, activation='relu',
                               kernel_initializer='random_uniform',
                               bias_initializer='random_uniform'))(x)
     # LSTM 1
@@ -52,7 +61,7 @@ def make_best_LSTM_lipreader_model(fc1_units=128,
     LSTM_lipreader = Model(inputs=my_input, outputs=my_output)
     LSTM_lipreader_encoder = Model(inputs=my_input, outputs=encoded)
     # Compile
-    optim = SGD(lr=0.02)
+    # optim = SGD(lr=0.02)
     LSTM_lipreader.compile(
         optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
     # Return
@@ -90,7 +99,7 @@ class CheckSIAndMakePlots(Callback):
         ta = logs.get('acc')
         vl = logs.get('val_loss')
         va = logs.get('val_acc')
-        print(tl, ta, vl, va)
+        print("\n", tl, ta, vl, va)
 
         # Speaker-Independent
         print("Calculating speaker-independent loss and acc...")
@@ -165,7 +174,7 @@ class CheckSIAndMakePlots(Callback):
 #############################################################
 
 
-def gen_GRIDcorpus_batch_mouth_features_and_one_hot_words(data,
+def gen_GRIDcorpus_batch_mouth_images_and_one_hot_words(data,
                                                           batch_size=128,
                                                           shuffle=True):
     # Data
@@ -197,8 +206,8 @@ def gen_GRIDcorpus_batch_mouth_features_and_one_hot_words(data,
         for batch_index in range(0, len(all_dirs), batch_size):
 
             # Batch outputs
-            batch_mouth_features = np.zeros(
-                (batch_size, MAX_FRAMES_PER_WORD, NUM_OF_MOUTH_PIXELS))
+            batch_mouth_images = np.zeros(
+                (batch_size, MAX_FRAMES_PER_WORD, MOUTH_H, MOUTH_W, 1))
             batch_one_hot_words = np.zeros((batch_size, GRID_VOCAB_SIZE))
 
             # Batch inputs
@@ -233,24 +242,23 @@ def gen_GRIDcorpus_batch_mouth_features_and_one_hot_words(data,
                 wordMouthFiles = mouthFiles[
                     wordStartFrame:wordEndFrame + 1]
                 # Initialize the array of images for this word
-                wordImages = np.zeros(
-                    (MAX_FRAMES_PER_WORD, NUM_OF_MOUTH_PIXELS))
+                wordImages = np.zeros((MAX_FRAMES_PER_WORD, MOUTH_H, MOUTH_W, 1))
                 # For each frame of this word
                 for f, wordMouthFrame in enumerate(wordMouthFiles[:MAX_FRAMES_PER_WORD]):
                     # in reverse order of frames. eg. If there are 7 frames:
                     # 0 0 0 0 0 0 0 7 6 5 4 3 2 1
-                    wordImages[-f - 1] = np.reshape(cv2.imread(wordMouthFrame,
-                                                               0) / 255., (NUM_OF_MOUTH_PIXELS,))
+                    wordImage = robust_imread(wordMouthFrame, 0)
+                    wordImages[-f - 1] = np.reshape(wordImage,
+                                                    (MOUTH_H, MOUTH_W, 1))
 
                 # MAKE FEATURES
-                batch_mouth_features[i] = wordImages
+                batch_mouth_images[i] = wordImages
 
                 # MAKE ONE HOT WORDS
                 batch_one_hot_words[i][word_index] = 1
 
             # Yield
-            yield batch_mouth_features, batch_one_hot_words
-
+            yield batch_mouth_images, batch_one_hot_words
 
 #############################################################
 # LOAD FEATURES AND ONE_HOT_WORDS
@@ -264,8 +272,8 @@ def load_GRIDcorpus_mouth_features_and_one_hot_words(data):
     word_idx = data["word_idx"]
 
     # Outputs
-    mouth_features = np.zeros(
-        (len(dirs), MAX_FRAMES_PER_WORD, NUM_OF_MOUTH_PIXELS))
+    mouth_images = np.zeros(
+        (len(dirs), MAX_FRAMES_PER_WORD, MOUTH_H, MOUTH_W, 1))
     one_hot_words = np.zeros((len(dirs), GRID_VOCAB_SIZE))
 
     # For each data point
@@ -294,29 +302,44 @@ def load_GRIDcorpus_mouth_features_and_one_hot_words(data):
         wordMouthFiles = mouthFiles[
             wordStartFrame:wordEndFrame + 1]
         # Initialize the array of images for this word
-        wordImages = np.zeros((MAX_FRAMES_PER_WORD, NUM_OF_MOUTH_PIXELS))
+        wordImages = np.zeros((MAX_FRAMES_PER_WORD, MOUTH_H, MOUTH_W, 1))
         # For each frame of this word
         for f, wordMouthFrame in enumerate(wordMouthFiles[:MAX_FRAMES_PER_WORD]):
             # in reverse order of frames. eg. If there are 7 frames:
             # 0 0 0 0 0 0 0 7 6 5 4 3 2 1
-            wordImages[-f - 1] = np.reshape(cv2.imread(wordMouthFrame,
-                                                       0) / 255., (NUM_OF_MOUTH_PIXELS,))
+            wordImage = robust_imread(wordMouthFrame, 0)
+            wordImages[-f - 1] = np.reshape(wordImage,
+                                            (MOUTH_H, MOUTH_W, 1))
 
         # MAKE FEATURES
-        mouth_features[i] = wordImages
+        mouth_images[i] = wordImages
 
         # MAKE ONE HOT WORDS
         one_hot_words[i][word_index] = 1
 
     # Return
-    return mouth_features, one_hot_words
+    return mouth_images, one_hot_words
+
+#############################################################
+# ROBUST IMREAD
+#############################################################
+
+
+def robust_imread(wordMouthFrame, cv_option=0):
+    try:
+        image = cv2.imread(wordMouthFrame, cv_option) / 255.
+        return image
+    except TypeError:
+        return robust_imread(wordMouthFrame, cv_option)
 
 #############################################################
 # SPLIT TRAIN AND TEST DATA
 #############################################################
 
 
-def split_train_and_test_data(train_test_data, test_split):
+def split_train_and_test_data(train_test_data, test_split, fix_seed=True):
+    if fix_seed:
+        np.random.seed(29)
     # Choose some data points of train_test as test data
     test_idx = np.sort(np.random.choice(len(train_test_data["dirs"]), int(
         test_split * len(train_test_data["dirs"])), replace=False))

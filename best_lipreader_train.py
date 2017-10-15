@@ -12,7 +12,7 @@ test_split = 0.2
 
 load_data = False
 
-batch_size = 128
+batch_size = 64
 
 num_of_epochs = 100
 
@@ -29,7 +29,7 @@ si_data = load_GRIDcorpus_speakers_data(SI_SPEAKERS_LIST)
 # Split train_test into train and test
 ########################################
 
-train_data, test_data = split_train_and_test_data(train_test_data, test_split)
+train_data, test_data = split_train_and_test_data(train_test_data, test_split, fix_seed=True)
 
 ########################################
 # Load or Generate data
@@ -53,16 +53,16 @@ else:
     # To generate data
     ########################################
     # Train
-    gen_train_mouth_features_and_one_hot_words \
-        = gen_GRIDcorpus_batch_mouth_features_and_one_hot_words(train_data, batch_size)
+    gen_train_mouth_images_and_one_hot_words \
+        = gen_GRIDcorpus_batch_mouth_images_and_one_hot_words(train_data, batch_size)
     train_steps = len(train_data["dirs"]) // batch_size
     # Test
-    gen_test_mouth_features_and_one_hot_words \
-        = gen_GRIDcorpus_batch_mouth_features_and_one_hot_words(test_data, batch_size)
+    gen_test_mouth_images_and_one_hot_words \
+        = gen_GRIDcorpus_batch_mouth_images_and_one_hot_words(test_data, batch_size)
     test_steps = len(test_data["dirs"]) // batch_size
     # Speaker-Independent
-    gen_si_mouth_features_and_one_hot_words \
-        = gen_GRIDcorpus_batch_mouth_features_and_one_hot_words(si_data, batch_size)
+    gen_si_mouth_images_and_one_hot_words \
+        = gen_GRIDcorpus_batch_mouth_images_and_one_hot_words(si_data, batch_size)
     si_steps = len(si_data["dirs"]) // batch_size
 
 ########################################
@@ -78,7 +78,7 @@ LSTM_lipreader, LSTM_lipreader_encoder = make_best_LSTM_lipreader_model()
 early_stop = EarlyStopping(patience=10, verbose=1)
 
 check_si_and_make_plots = CheckSIAndMakePlots(
-    GRID_DATA_DIR, gen_si_mouth_features_and_one_hot_words, 1,
+    GRID_DATA_DIR, gen_si_mouth_images_and_one_hot_words, si_steps,
     file_name_pre="best-LSTM-lipreader")
 
 ########################################
@@ -86,10 +86,10 @@ check_si_and_make_plots = CheckSIAndMakePlots(
 ########################################
 
 LSTM_lipreader_history \
-    = LSTM_lipreader.fit_generator(gen_train_mouth_features_and_one_hot_words,
-                                   steps_per_epoch=2,
+    = LSTM_lipreader.fit_generator(gen_train_mouth_images_and_one_hot_words,
+                                   steps_per_epoch=train_steps,
                                    epochs=num_of_epochs, verbose=True,
                                    callbacks=[
                                        check_si_and_make_plots, early_stop],
-                                   validation_data=gen_test_mouth_features_and_one_hot_words,
-                                   validation_steps=1)
+                                   validation_data=gen_test_mouth_images_and_one_hot_words,
+                                   validation_steps=test_steps)
