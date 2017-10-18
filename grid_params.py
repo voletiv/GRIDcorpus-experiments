@@ -20,7 +20,15 @@ if GEN_DIR not in sys.path:
 
 # GRIDcorpus dataset directory
 # GRID_DATA_DIR = '/media/voletiv/01D2BF774AC76280/Datasets/GRIDcorpus'
-GRID_DATA_DIR = '/home/voletiv/Datasets/GRIDcorpus'
+
+if 'voletiv' in os.getcwd():
+    # voletiv
+    GRID_DATA_DIR = '/home/voletiv/Datasets/GRIDcorpus'
+
+elif 'voleti.vikram' in os.getcwd():
+    # Neutron6
+    GRID_DATA_DIR = '/Neutron6/voleti.vikram/GRIDcorpus'
+
 
 #############################################################
 # PARAMETERS FOR GRIDCORPUS

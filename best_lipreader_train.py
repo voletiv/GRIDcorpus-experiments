@@ -24,7 +24,6 @@ train_test_data = load_GRIDcorpus_speakers_data(TRAIN_VAL_SPEAKERS_LIST)
 
 si_data = load_GRIDcorpus_speakers_data(SI_SPEAKERS_LIST)
 
-
 ########################################
 # Split train_test into train and test
 ########################################
@@ -93,3 +92,13 @@ LSTM_lipreader_history \
                                        check_si_and_make_plots, early_stop],
                                    validation_data=gen_test_mouth_images_and_one_hot_words,
                                    validation_steps=test_steps)
+
+LSTM_lipreader_history \
+    = LSTM_lipreader.fit(train_mouth_features, train_one_hot_words,
+                         batch_size=batch_size, epochs=num_of_epochs, verbose=True,
+                         callbacks=[
+                             check_si_and_make_plots, early_stop],
+                         validation_data=[test_mouth_features, train_one_hot_words],
+                         shuffle=True)
+
+
